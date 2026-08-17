@@ -1,4 +1,4 @@
-# 💼 Freelance Portfolio CLI
+# Freelance Portfolio CLI
 
 Aplicación de línea de comandos en **Node.js** que permite a un freelancer gestionar su portafolio profesional completo: clientes, propuestas, proyectos, contratos, entregables y finanzas.
 
@@ -6,27 +6,27 @@ Construida con **Programación Orientada a Objetos**, aplicando **principios SOL
 
 ---
 
-## 📑 Tabla de contenidos
+## Tabla de contenidos
 
 - [Descripción del proyecto](#-descripción-del-proyecto)
 - [Vídeo de presentación](#-vídeo-de-presentación)
 - [Requisitos previos](#-requisitos-previos)
 - [Instalación](#-instalación)
-- [Configuración de MongoDB](#️-configuración-de-mongodb)
+- [Configuración de MongoDB](-configuración-de-mongodb)
 - [Uso](#-uso)
 - [Estructura del proyecto](#-estructura-del-proyecto)
-- [Modelo de datos](#️-modelo-de-datos)
+- [Modelo de datos](-modelo-de-datos)
 - [Principios SOLID aplicados](#-principios-solid-aplicados)
 - [Patrones de diseño usados](#-patrones-de-diseño-usados)
 - [Transacciones: dónde y por qué](#-transacciones-dónde-y-por-qué)
 - [Pruebas](#-pruebas)
-- [Consideraciones técnicas](#️-consideraciones-técnicas)
+- [Consideraciones técnicas](-consideraciones-técnicas)
 - [Planeación Scrum](#-planeación-scrum)
 - [Créditos](#-créditos)
 
 ---
 
-## 📖 Descripción del proyecto
+## Descripción del proyecto
 
 **Freelance Portfolio CLI** resuelve un problema real: un profesional independiente gestiona su negocio repartido entre hojas de cálculo, notas sueltas y correos. Esta herramienta centraliza todo el ciclo comercial en una única aplicación de consola:
 
@@ -38,12 +38,12 @@ Cliente → Propuesta → [aceptación] → Proyecto + Contrato → Entregables 
 
 | Módulo | Capacidades |
 |---|---|
-| **👥 Clientes** | Alta y **edición** con validación, búsqueda por código/nombre/empresa/email, desactivación y reactivación (borrado lógico) |
-| **📄 Propuestas** | Crear y editar (solo mientras estén pendientes); **aceptar genera proyecto y contrato en una sola transacción**; rechazar con motivo; estadísticas de conversión |
-| **🗂️ Proyectos** | Listado y filtro por estado, ficha completa, edición de nombre, descripción y fecha de fin, registro de avance manual, finalización y cancelación |
-| **📜 Contratos** | Relación 1:1 con el proyecto, edición de condiciones, forma de pago y valor mientras sea borrador, **firma transaccional**, documento imprimible |
-| **📦 Entregables** | Por proyecto, con fecha límite y peso. Máquina de estados (pendiente → entregado → aprobado/rechazado). **Cada cambio de estado —y cada edición del peso— recalcula el avance del proyecto dentro de una transacción** |
-| **💰 Finanzas** | Ingresos y egresos por proyecto, **anti-duplicidad de pagos**, anulación con reversión de acumulados, balance general, balance por cliente y análisis de rentabilidad. Los importes **no se editan**: se anula y se registra de nuevo |
+| ** Clientes** | Alta y **edición** con validación, búsqueda por código/nombre/empresa/email, desactivación y reactivación (borrado lógico) |
+| ** Propuestas** | Crear y editar (solo mientras estén pendientes); **aceptar genera proyecto y contrato en una sola transacción**; rechazar con motivo; estadísticas de conversión |
+| ** Proyectos** | Listado y filtro por estado, ficha completa, edición de nombre, descripción y fecha de fin, registro de avance manual, finalización y cancelación |
+| ** Contratos** | Relación 1:1 con el proyecto, edición de condiciones, forma de pago y valor mientras sea borrador, **firma transaccional**, documento imprimible |
+| ** Entregables** | Por proyecto, con fecha límite y peso. Máquina de estados (pendiente → entregado → aprobado/rechazado). **Cada cambio de estado —y cada edición del peso— recalcula el avance del proyecto dentro de una transacción** |
+| ** Finanzas** | Ingresos y egresos por proyecto, **anti-duplicidad de pagos**, anulación con reversión de acumulados, balance general, balance por cliente y análisis de rentabilidad. Los importes **no se editan**: se anula y se registra de nuevo |
 
 ### Todo se identifica con códigos legibles
 
@@ -57,13 +57,13 @@ Los servicios aceptan indistintamente el código o el identificador interno (`Ba
 
 ---
 
-## 🎥 Vídeo de presentación
+## Vídeo de presentación
 
-> 🔗 **[VER VÍDEO DE PRESENTACIÓN](https://ENLACE-PENDIENTE)**
+ **[VER VÍDEO DE PRESENTACIÓN](https://drive.google.com/drive/folders/1_GrZRgvlrmKPQLMRQV-TvCahsIXme-wQ?usp=sharing)**
 
 ---
 
-## ✅ Requisitos previos
+## Requisitos previos
 
 | Software | Versión mínima | Notas |
 |---|---|---|
@@ -73,7 +73,7 @@ Los servicios aceptan indistintamente el código o el identificador interno (`Ba
 
 ---
 
-## 🚀 Instalación
+## Instalación
 
 ```bash
 # 1. Clonar el repositorio
@@ -107,9 +107,9 @@ cp .env.example .env       # En Windows PowerShell: Copy-Item .env.example .env
 
 ---
 
-## 🗄️ Configuración de MongoDB
+## Configuración de MongoDB
 
-> ⚠️ **Importante:** las transacciones de MongoDB **solo funcionan sobre un replica set o un cluster sharded**. Un `mongod` en modo standalone las rechaza con el error *"Transaction numbers are only allowed on a replica set member or mongos"*.
+ **Importante:** las transacciones de MongoDB **solo funcionan sobre un replica set o un cluster sharded**. Un `mongod` en modo standalone las rechaza con el error *"Transaction numbers are only allowed on a replica set member or mongos"*.
 
 ### Opción A — MongoDB Atlas (recomendada)
 
@@ -148,7 +148,7 @@ Las colecciones y los índices se crean solos en el primer arranque.
 
 ---
 
-## 💻 Uso
+## Uso
 
 ```bash
 npm start        # Abrir la aplicación
@@ -172,7 +172,7 @@ Finanzas → Registrar ingreso → Rentabilidad
 
 ---
 
-## 📁 Estructura del proyecto
+## Estructura del proyecto
 
 ```
 freelance-portfolio-cli/
@@ -187,7 +187,7 @@ freelance-portfolio-cli/
 │   ├── config/
 │   │   └── database.js          # Conexión a MongoDB — SINGLETON
 │   │
-│   ├── models/                  # 📋 Entidades: forma del dato y sus validaciones
+│   ├── models/                  # Entidades: forma del dato y sus validaciones
 │   │   ├── Cliente.js
 │   │   ├── Propuesta.js
 │   │   ├── Proyecto.js          # + FACTORY METHOD (desdePropuesta)
@@ -195,7 +195,7 @@ freelance-portfolio-cli/
 │   │   ├── Entregable.js        # + máquina de estados (TRANSICIONES)
 │   │   └── Movimiento.js        # + categorías cruzadas con el tipo
 │   │
-│   ├── repositories/            # 🗄️ Acceso a datos — REPOSITORY
+│   ├── repositories/            # Acceso a datos — REPOSITORY
 │   │   ├── BaseRepositorio.js   # CRUD genérico, códigos consecutivos, sesiones
 │   │   ├── ClienteRepositorio.js
 │   │   ├── PropuestaRepositorio.js
@@ -204,7 +204,7 @@ freelance-portfolio-cli/
 │   │   ├── EntregableRepositorio.js
 │   │   └── MovimientoRepositorio.js
 │   │
-│   ├── services/                # 🧠 Reglas de negocio y TRANSACCIONES
+│   ├── services/                # Reglas de negocio y TRANSACCIONES
 │   │   ├── ClienteService.js
 │   │   ├── PropuestaService.js  # ★ aceptar → propuesta + proyecto + contrato
 │   │   ├── ProyectoService.js
@@ -220,7 +220,7 @@ freelance-portfolio-cli/
 │   │   ├── entregables.js
 │   │   └── finanzas.js
 │   │
-│   └── utils/                   # 🛠️ Utilidades transversales
+│   └── utils/                   # Utilidades transversales
 │       ├── entrada.js           # Preguntar Y validar (sobre inquirer)
 │       ├── estilo.js            # Colores con significado (chalk)
 │       ├── tabla.js             # Tablas (cli-table3)
@@ -252,11 +252,11 @@ freelance-portfolio-cli/
       ↑ Ninguna capa inferior conoce a la superior.
 ```
 
-📍 **Comprobación rápida:** busca `console.log` en `/src/services` — no hay ninguno. Busca `collection` u `ObjectId` en `/src/commands` — solo aparecen dentro de un comentario que explica precisamente que no deben aparecer.
+ **Comprobación rápida:** busca `console.log` en `/src/services` — no hay ninguno. Busca `collection` u `ObjectId` en `/src/commands` — solo aparecen dentro de un comentario que explica precisamente que no deben aparecer.
 
 ---
 
-## 🗃️ Modelo de datos
+## Modelo de datos
 
 Cada modelo es una clase que **se valida a sí misma** antes de que nadie intente guardarla, y que se convierte en documento con `aDocumento()`. Ese método existe para controlar exactamente qué campos llegan a MongoDB: una propiedad temporal añadida a la clase no se cuela sin querer en la base de datos.
 
@@ -293,9 +293,9 @@ El menú **solo ofrece las transiciones legales** desde el estado actual: lee es
 
 ---
 
-## 🧱 Principios SOLID aplicados
+## Principios SOLID aplicados
 
-### 1️⃣ SRP — Responsabilidad Única
+### SRP — Responsabilidad Única
 
 | Archivo | Su única responsabilidad | Lo que NO hace |
 |---|---|---|
@@ -306,26 +306,26 @@ El menú **solo ofrece las transiciones legales** desde el estado actual: lee es
 | `utils/entrada.js` | Preguntar y validar la respuesta | No decide qué se pregunta |
 | `utils/estilo.js` | Decidir cómo se ve cada cosa | No decide qué se muestra |
 
-📍 Ejemplo pequeño pero claro: `config/database.js` **no imprime nada**. Antes hacía un `console.log` al conectarse, lo que le daba dos trabajos: conectarse y contarlo. Ahora solo se conecta, y quien avisa al usuario es `index.js`.
+ Ejemplo pequeño pero claro: `config/database.js` **no imprime nada**. Antes hacía un `console.log` al conectarse, lo que le daba dos trabajos: conectarse y contarlo. Ahora solo se conecta, y quien avisa al usuario es `index.js`.
 
-### 2️⃣ OCP — Abierto/Cerrado
+### OCP — Abierto/Cerrado
 
-- 📍 `repositories/BaseRepositorio.js` no se modifica nunca. Cuando un repositorio necesita algo propio (`buscarPorEmail`, `listarVencidos`), lo **añade** en su propia clase.
-- 📍 Añadir un estado nuevo a los entregables es añadir una fila a `Entregable.TRANSICIONES`; ni el servicio ni el menú cambian.
-- 📍 Añadir una categoría financiera es añadirla a `Movimiento.CATEGORIAS`; el menú la ofrecerá sola.
+-  `repositories/BaseRepositorio.js` no se modifica nunca. Cuando un repositorio necesita algo propio (`buscarPorEmail`, `listarVencidos`), lo **añade** en su propia clase.
+-  Añadir un estado nuevo a los entregables es añadir una fila a `Entregable.TRANSICIONES`; ni el servicio ni el menú cambian.
+-  Añadir una categoría financiera es añadirla a `Movimiento.CATEGORIAS`; el menú la ofrecerá sola.
 
-### 3️⃣ LSP — Sustitución de Liskov
+### LSP — Sustitución de Liskov
 
 Los seis repositorios heredan de `BaseRepositorio` y respetan su contrato: cualquiera puede usarse donde se espere el padre. Ninguno endurece las condiciones ni cambia el significado de los métodos heredados — `crear` siempre crea y devuelve el identificador, `actualizar` siempre devuelve si encontró el documento.
 
-### 4️⃣ ISP — Segregación de Interfaces
+### ISP — Segregación de Interfaces
 
-- 📍 `utils/entrada.js` expone funciones pequeñas y específicas (`pedirTexto`, `pedirNumero`, `pedirFecha`, `pedirEmail`, `confirmar`, `elegirDeLista`) en lugar de un único método gigante con veinte parámetros.
-- 📍 Cada menú recibe **solo su servicio**, no un objeto con toda la aplicación.
+-  `utils/entrada.js` expone funciones pequeñas y específicas (`pedirTexto`, `pedirNumero`, `pedirFecha`, `pedirEmail`, `confirmar`, `elegirDeLista`) en lugar de un único método gigante con veinte parámetros.
+-  Cada menú recibe **solo su servicio**, no un objeto con toda la aplicación.
 
-### 5️⃣ DIP — Inversión de Dependencias
+### DIP — Inversión de Dependencias
 
-📍 Todos los servicios reciben sus colaboradores por constructor, nunca los construyen:
+ Todos los servicios reciben sus colaboradores por constructor, nunca los construyen:
 
 ```js
 // src/services/PropuestaService.js
@@ -333,22 +333,22 @@ constructor(propuestaRepositorio, proyectoRepositorio, contratoRepositorio,
             clienteRepositorio, mongoClient) { … }
 ```
 
-📍 `index.js` es el **único sitio de todo el proyecto** donde se hace `new` de repositorios y servicios. Consecuencias directas:
+ `index.js` es el **único sitio de todo el proyecto** donde se hace `new` de repositorios y servicios. Consecuencias directas:
 
 - Para probar un servicio se le pasan repositorios falsos sin tocar su código.
 - Cambiar MongoDB por otra base implicaría reescribir `/repositories` y nada más: ningún servicio cambiaría.
 
 ---
 
-## 🎯 Patrones de diseño usados
+##  Patrones de diseño usados
 
-### 1. 🏛️ Singleton — `src/config/database.js`
+### 1.  Singleton — `src/config/database.js`
 
 Una única instancia de `MongoClient` compartida por toda la aplicación. La clase guarda su propia instancia en una propiedad estática y la devuelve si alguien intenta crear otra.
 
 **Por qué:** abrir un cliente por operación agotaría el pool de conexiones, y sobre todo impediría compartir sesiones coherentes entre repositorios dentro de una misma transacción — una transacción vive dentro de una conexión.
 
-### 2. 🗄️ Repository — `src/repositories/`
+### 2.  Repository — `src/repositories/`
 
 Abstrae el acceso a datos. Los servicios hablan de `crear`, `buscarPorId`, `listar`; nunca de `insertOne` o `find`.
 
@@ -356,7 +356,7 @@ Abstrae el acceso a datos. Los servicios hablan de `crear`, `buscarPorId`, `list
 
 La herencia hace el trabajo pesado: `ClienteRepositorio` recibe todo el CRUD de `BaseRepositorio` y solo escribe lo que es exclusivamente suyo.
 
-### 3. 🏭 Factory Method — `Proyecto.desdePropuesta()` y `Contrato.desdeProyecto()`
+### 3.  Factory Method — `Proyecto.desdePropuesta()` y `Contrato.desdeProyecto()`
 
 El propio modelo sabe cómo derivarse de otro:
 
@@ -366,7 +366,7 @@ const proyecto = Proyecto.desdePropuesta(propuesta, codigo)
 
 **Por qué:** si el servicio fuera copiando campo por campo, el día que el proyecto herede un dato más de la propuesta habría que recordar cambiarlo allí. Así se cambia en un solo sitio, y es el modelo —que es quien sabe de su propia forma— el que decide.
 
-### 4. 🎭 Strategy (en su forma más simple) — `utils/entrada.js`
+### 4. Strategy (en su forma más simple) — `utils/entrada.js`
 
 `elegirDeLista` no sabe cómo se describe un cliente ni una propuesta. Recibe esa decisión desde fuera:
 
@@ -381,7 +381,7 @@ await elegirDeLista(clientes, {
 
 ---
 
-## 🔐 Transacciones: dónde y por qué
+## Transacciones: dónde y por qué
 
 Todas las operaciones que escriben en **más de una colección** son transaccionales. Si cualquier paso falla, MongoDB ejecuta `abortTransaction()` y ningún cambio se persiste.
 
@@ -409,7 +409,7 @@ El mismo razonamiento vale para la validación del email, que está a la vez en 
 
 ---
 
-## 🧪 Pruebas
+## Pruebas
 
 ```bash
 npm test                  # las cuatro suites (~1 min 30 s)
@@ -433,7 +433,7 @@ La suite **caza-bugs** incluye la prueba del *rollback* real: provoca un fallo a
 
 ---
 
-## ⚙️ Consideraciones técnicas
+## Consideraciones técnicas
 
 ### Decisiones de diseño
 
@@ -480,7 +480,7 @@ Los encontró la suite de pruebas, y ninguno daba error visible:
 
 ---
 
-## 📋 Planeación Scrum
+## Planeación Scrum
 
 | Elemento | Detalle |
 |---|---|
