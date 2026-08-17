@@ -1,0 +1,43 @@
+{
+  "name": "freelance-portfolio-cli",
+  "version": "1.0.0",
+  "description": "CLI en Node.js para que un freelancer gestione su portafolio profesional: clientes, propuestas, proyectos, contratos, entregables y finanzas, con persistencia en MongoDB y transacciones reales.",
+  "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "test": "npm run test:reglas && npm run test:consola && npm run test:pantallas && npm run test:bugs",
+    "test:reglas": "node tests/reglas-negocio.test.js",
+    "test:consola": "node tests/consola.test.js",
+    "test:pantallas": "node tests/pantallas.test.js",
+    "test:bugs": "node tests/caza-bugs.test.js"
+  },
+  "keywords": [
+    "cli",
+    "nodejs",
+    "mongodb",
+    "freelance",
+    "poo",
+    "solid",
+    "design-patterns"
+  ],
+  "author": "Equipo Freelance Portfolio CLI",
+  "license": "MIT",
+  "dependencies": {
+    "boxen": "^8.0.1",
+    "chalk": "^5.3.0",
+    "cli-table3": "^0.6.5",
+    "dayjs": "^1.11.11",
+    "dotenv": "^16.4.5",
+    "figlet": "^1.7.0",
+    "gradient-string": "^3.0.0",
+    "inquirer": "^9.3.2",
+    "log-symbols": "^7.0.1",
+    "mongodb": "^6.8.0",
+    "ora": "^9.4.1"
+  }
+}
