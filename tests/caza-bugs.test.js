@@ -1,8 +1,4 @@
 // CAZA DE BUGS.
-//
-// No comprueba que las cosas funcionen (de eso van las otras suites): busca
-// activamente formas de ROMPER la aplicacion. En vez de fallar en el primer
-// problema, apunta todo y da un informe al final.
 process.env.MONGODB_DB_V2 = 'freelance_portfolio_cazabugs'
 
 const base = new URL('../src', import.meta.url).href
@@ -17,7 +13,7 @@ function ok(descripcion) {
     bien.push(descripcion)
 }
 
-/** Ejecuta una sonda y captura lo que pase. */
+// EJECUTA Y ATRAPA ERRORES
 async function sonda(zona, descripcion, fn) {
     try {
         await fn()
@@ -54,10 +50,6 @@ for (const n of [
 
 const db = await database.conectar()
 
-// Empezamos SIEMPRE de cero. Si una ejecucion anterior se interrumpio a
-// medias (un Ctrl+C, un tiempo agotado), su base desechable pudo quedarse
-// con datos, y la siguiente ejecucion fallaria por culpa de la anterior.
-// Una prueba que no se puede repetir no sirve de mucho.
 await db.dropDatabase()
 const mongoClient = database.obtenerCliente()
 
@@ -97,9 +89,7 @@ try {
     })
     await propuestaService.aceptar('PRO-0001')
 
-    // =================================================================
     // ZONA 1: FECHAS Y ZONA HORARIA
-    // =================================================================
     await sonda('fechas', 'la fecha limite se guarda y se muestra el MISMO dia', async () => {
         const codigo = await entregableService.crear({
             proyectoId: 'PRY-0001',
@@ -146,7 +136,6 @@ try {
     })
 
     await sonda('fechas', 'el balance incluye el dia "hasta" completo', async () => {
-        // Un movimiento de hoy debe entrar en un balance acotado a hoy.
         await finanzaService.registrar({
             proyectoId: 'PRY-0001',
             tipo: 'ingreso',
@@ -173,11 +162,7 @@ try {
         }
     })
 
-    // =================================================================
     // ZONA 2: TEXTO LIBRE DEL USUARIO
-    // =================================================================
-    // Todos de 2+ caracteres: con menos salta la regla del minimo, que es
-    // legitima y no un bug.
     for (const texto of ['((', '[a-', '**', '\\\\', '.*', '++', 'C++', '(web)', 'Ana|Luis']) {
         await sonda('busqueda', `buscar "${texto}" no debe reventar`, async () => {
             try {
@@ -202,12 +187,8 @@ try {
         }
     })
 
-    // =================================================================
     // ZONA 3: LA SEGUNDA LINEA DE DEFENSA (indices unicos)
-    // =================================================================
     await sonda('indices', 'un choque de indice unico da mensaje entendible', async () => {
-        // Simula la carrera: el servicio comprueba y justo despues alguien
-        // mete el mismo email. Aqui vamos directos al repositorio.
         try {
             await clientes.crear({ codigo: 'CLI-9001', email: 'ana@correo.com', nombre: 'Copia' })
             fallo('indices', 'el indice unico de email NO impidio el duplicado', 'se inserto')
@@ -224,9 +205,7 @@ try {
         }
     })
 
-    // =================================================================
     // ZONA 4: NUMEROS Y DINERO
-    // =================================================================
     await sonda('dinero', 'los acumulados no acarrean error de coma flotante', async () => {
         await finanzaService.registrar({
             proyectoId: 'PRY-0001',
@@ -265,13 +244,10 @@ try {
         }
     })
 
-    // =================================================================
     // ZONA 5: CONTADORES DE CODIGOS
-    // =================================================================
     await sonda('contadores', 'una creacion fallida no quema un codigo', async () => {
         const antes = await db.collection('contadores').findOne({ _id: 'ENT' })
         try {
-            // Peso invalido: el modelo lo rechaza DESPUES de pedir el codigo?
             await entregableService.crear({
                 proyectoId: 'PRY-0001',
                 titulo: 'Entregable que va a fallar',
@@ -279,7 +255,6 @@ try {
                 peso: -5,
             })
         } catch {
-            /* se espera que falle */
         }
         const despues = await db.collection('contadores').findOne({ _id: 'ENT' })
         if ((despues?.secuencia ?? 0) !== (antes?.secuencia ?? 0)) {
@@ -305,7 +280,6 @@ try {
                 referencia: 'REF-FALLA-1',
             })
         } catch {
-            /* se espera que falle */
         }
         const despues = await db.collection('contadores').findOne({ _id: 'MOV' })
         if ((despues?.secuencia ?? 0) !== (antes?.secuencia ?? 0)) {
@@ -319,9 +293,7 @@ try {
         }
     })
 
-    // =================================================================
     // ZONA 6: AVANCE Y ENTREGABLES
-    // =================================================================
     await sonda('avance', 'borrar todos los entregables no deja un avance mentiroso', async () => {
         const e = await entregables.buscarPorIdOCodigo('ENT-0001')
         await entregableService.eliminar(e._id)
@@ -351,9 +323,7 @@ try {
         }
     })
 
-    // =================================================================
     // ZONA 7: DATOS RAROS PERO POSIBLES
-    // =================================================================
     await sonda('datos', 'un cliente sin empresa ni telefono no rompe nada', async () => {
         const c = await clientes.buscarPorIdOCodigo('CLI-0001')
         if (c.empresa !== null || c.telefono !== null) {
@@ -376,7 +346,6 @@ try {
     await database.cerrar()
 }
 
-// =====================================================================
 console.log(`Sondas superadas: ${bien.length}`)
 for (const b of bien) console.log(`  ok   ${b}`)
 

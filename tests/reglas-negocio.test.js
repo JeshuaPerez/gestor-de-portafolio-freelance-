@@ -1,9 +1,4 @@
-// Recorre TODO el flujo del negocio contra los SERVICIOS.
-// Usa una base de datos desechable que se borra al final.
-//
-// Antes esto conducia los menus con un readline falso. Al pasar a inquirer
-// se prueban los servicios directamente: las reglas de negocio viven ahi,
-// no en la consola. La parte de consola se prueba en probar-inquirer.mjs.
+// RECORRE EL FLUJO COMPLETO DE LA APLICACIÓN, CREANDO CLIENTES, PROPUESTAS, PROYECTOS, CONTRATOS, ENTREGABLES Y MOVIMIENTOS.
 import assert from 'node:assert/strict'
 
 process.env.MONGODB_DB_V2 = 'freelance_portfolio_pruebas'
@@ -43,10 +38,6 @@ for (const n of [
 
 const db = await database.conectar()
 
-// Empezamos SIEMPRE de cero. Si una ejecucion anterior se interrumpio a
-// medias (un Ctrl+C, un tiempo agotado), su base desechable pudo quedarse
-// con datos, y la siguiente ejecucion fallaria por culpa de la anterior.
-// Una prueba que no se puede repetir no sirve de mucho.
 await db.dropDatabase()
 const mongoClient = database.obtenerCliente()
 
@@ -360,9 +351,7 @@ try {
         assert.equal(b.balance, 0)
     })
 
-    // =================================================================
-    // EDICIÓN
-    // =================================================================
+    // EDICION
     await prueba('26. Editar un cliente valida igual que al crearlo', async () => {
         await assert.rejects(() => clienteService.editar('CLI-0001', { nombre: 'Ab' }), /3 caracteres/)
         await assert.rejects(() => clienteService.editar('CLI-0001', { email: 'malo' }), /formato válido/)
@@ -423,8 +412,6 @@ try {
     })
 
     await prueba('32. Editar el peso de un entregable recalcula el avance', async () => {
-        // ENT-0001 (peso 30) esta aprobado -> avance 30 de 100.
-        // Subimos ENT-0002 de 70 a 170: ahora el total es 200 y 30/200 = 15%.
         await entregableService.editar('ENT-0002', { peso: 170 })
         assert.equal((await proyectos.buscarPorIdOCodigo('PRY-0001')).avance, 15)
         await entregableService.editar('ENT-0002', { peso: 70 })
@@ -452,8 +439,6 @@ try {
         const guardado = await movimientos.buscarPorIdOCodigo(m.codigo)
         assert.equal(guardado.concepto, 'Concepto corregido')
         assert.equal(guardado.monto, 5000, 'el monto sigue intacto')
-
-        // No existe forma de editar el monto: el servicio no expone ninguna.
         assert.equal(typeof finanzaService.editar, 'undefined')
     })
 

@@ -1,12 +1,4 @@
 // PRUEBA DE PANTALLAS.
-//
-// Cubre el hueco que dejo el bug de cli-table3: las pruebas de negocio
-// llaman a los servicios y nunca DIBUJAN nada, asi que un fallo al pintar
-// una tabla pasaba inadvertido.
-//
-// Aqui se conducen los seis menus de verdad, con inquirer y un teclado
-// falso, sobre una base con datos. Si alguna pantalla revienta, el menu lo
-// atrapa y escribe una linea con ✗: eso es lo que buscamos.
 import assert from 'node:assert/strict'
 import { icono } from '../src/utils/estilo.js'
 import { ENTER, bajar, teclear } from './ayuda-teclado.js'
@@ -15,26 +7,16 @@ process.env.MONGODB_DB_V2 = 'freelance_portfolio_pantallas'
 
 const base = new URL('../src', import.meta.url).href
 
-// El simbolo de error lo decide log-symbols segun la terminal (✖ o ×),
-// asi que se lo preguntamos en vez de escribirlo a mano: si lo pusieramos
-// literal y la libreria cambiara de simbolo, esta prueba dejaria de ver
-// los fallos y pasaria en verde siempre.
 const MARCA_ERROR = icono.error
 
-// --- captura de lo que imprimen los menus ----------------------------
+// CAPTURA DE DATO DE MENU
 const logReal = console.log
 let capturado = []
 
-/**
- * Ejecuta un menu tecleando las pulsaciones indicadas y devuelve todo lo
- * que imprimio, para poder comprobar que no hubo ningun error.
- */
 async function recorrer(menu, servicio, pulsaciones) {
     capturado = []
     console.log = (...args) => capturado.push(args.join(' '))
 
-    // `teclear` espera a que la pantalla se quede quieta antes de cada
-    // pulsacion, en vez de confiar en un tiempo fijo. Ver ayuda-teclado.js.
     await teclear(menu(servicio), pulsaciones)
 
     console.log = logReal
@@ -51,7 +33,7 @@ async function prueba(nombre, fn) {
     logReal(`  OK  ${nombre}`)
 }
 
-// --- montaje ----------------------------------------------------------
+// MONTAJE
 const { database } = await import(`${base}/config/database.js`)
 const repos = {}
 for (const n of [
@@ -89,10 +71,7 @@ for (const n of [
 
 const db = await database.conectar()
 
-// Empezamos SIEMPRE de cero. Si una ejecucion anterior se interrumpio a
-// medias (un Ctrl+C, un tiempo agotado), su base desechable pudo quedarse
-// con datos, y la siguiente ejecucion fallaria por culpa de la anterior.
-// Una prueba que no se puede repetir no sirve de mucho.
+// EMPEZAMOS SIEMPRE DE CERO. 
 await db.dropDatabase()
 const mongoClient = database.obtenerCliente()
 
@@ -122,7 +101,7 @@ const finanzaService = new svc.FinanzaService(movimientos, proyectos, clientes, 
 logReal('\n=== PANTALLAS DE LOS SEIS MENUS ===\n')
 
 try {
-    // --- datos de partida, por los servicios (rapido y sin teclado) ---
+    // DATOS DE PARTIDA
     await clienteService.crear({ nombre: 'Juan Lema', email: 'juan@cementos.com' })
     await clienteService.crear({
         nombre: 'Cliente Con Un Nombre Muy Largo Para Ver Si Se Descuadra',
@@ -157,7 +136,6 @@ try {
         referencia: 'FAC-2026-001',
     })
 
-    // =================================================================
     await prueba('Clientes: listar (el bug de la tabla)', async () => {
         const salida = await recorrer(menus.menuClientes, clienteService, [
             ...bajar(1), // Listar clientes
@@ -196,7 +174,6 @@ try {
             ...bajar(7), // Volver
         ])
         assert.ok(salida.includes('PRY-0001'))
-        // La ficha es un panel: etiqueta y valor en columnas, sin dos puntos.
         assert.ok(salida.includes('Cliente'), 'la ficha trae la etiqueta Cliente')
         assert.ok(salida.includes('Juan Lema'), 'la ficha trae el nombre del cliente')
         assert.ok(salida.includes('Cobrado'), 'la ficha trae los acumulados')

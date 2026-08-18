@@ -1,11 +1,5 @@
-// Prueba la capa de consola conduciendo inquirer con un teclado falso.
-// Le enchufamos streams propios con `usarStreams` y le mandamos las mismas
-// pulsaciones que haria una persona, flechas incluidas.
+// INQUIRER CON TECLADO FALSO
 import assert from 'node:assert/strict'
-
-// El teclado y la pantalla falsos viven en su propio modulo, compartidos
-// con la prueba de pantallas. Importarlo tambien deja a inquirer
-// enchufado a esos streams, asi que tiene que ir ANTES de usar entrada.js.
 import { ABAJO, ENTER, corregir, teclear } from './ayuda-teclado.js'
 import {
     pedirTexto,
@@ -75,16 +69,11 @@ await prueba('pedirNumero rechaza letras y valores fuera de rango', async () => 
 })
 
 await prueba('pedirNumero NO confunde vacio con cero', async () => {
-    // Number('') === 0: si no se comprueba el vacio antes, un Enter se cuela
-    // como un 0 valido. Este es el fallo silencioso que queriamos evitar.
     const valor = await teclear(pedirNumero('Plazo', { min: 1 }), [ENTER, '7' + ENTER])
     assert.equal(valor, 7)
 })
 
 await prueba('la coma es separador de MILES, no decimal (Guatemala)', async () => {
-    // Este era el bug: con las reglas colombianas, "20,000" se convertia en
-    // "20.000" y se guardaban 20 quetzales en vez de veinte mil. Sin error,
-    // porque 20 es un numero perfectamente valido.
     assert.equal(await teclear(pedirNumero('Monto'), ['20,000' + ENTER]), 20000)
     assert.equal(await teclear(pedirNumero('Monto'), ['1,500.50' + ENTER]), 1500.5)
     assert.equal(await teclear(pedirNumero('Monto'), ['20 000' + ENTER]), 20000)

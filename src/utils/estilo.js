@@ -1,25 +1,7 @@
 import chalk from 'chalk'
 import simbolos from 'log-symbols'
 
-/**
- * =====================================================================
- *  COLORES DE LA CONSOLA — un único sitio donde se decide cómo se ve
- * =====================================================================
- *
- * LA TENTACIÓN, Y POR QUÉ NO LA SEGUIMOS
- *
- * Lo fácil sería escribir `chalk.red(...)` directamente en cada menú.
- * Funciona, pero acabas con `chalk.red` repetido en cuarenta sitios, y el
- * día que decidas que los errores van en amarillo tienes que buscarlos
- * todos. Y siempre se escapa alguno.
- *
- * Aquí no exportamos COLORES, exportamos SIGNIFICADOS: `error`, `exito`,
- * `codigo`. El menú dice qué es cada cosa, no de qué color va. Cambiar la
- * paleta entera es cambiar este archivo.
- *
- * Es la misma idea que `entrada.js`: quien llama describe su intención, y
- * el detalle técnico vive en un solo lugar.
- */
+// COLORES DE CONSOLA
 
 export const estilo = {
     /** Cabeceras de sección: ========== CLIENTES ========== */
@@ -50,21 +32,7 @@ export const estilo = {
     dato: (texto) => chalk.bold.white(texto),
 }
 
-/**
- * ---------------------------------------------------------------------
- * SÍMBOLOS
- * ---------------------------------------------------------------------
- * Antes escribíamos ✓ y ✗ a mano en cada mensaje. El problema: no todas
- * las consolas saben dibujarlos. En la consola antigua de Windows (cmd.exe)
- * salen como cuadraditos o interrogantes, y el mensaje queda peor que sin
- * símbolo.
- *
- * `log-symbols` MIRA la terminal en la que estás: si aguanta Unicode usa
- * ✔ ✖ ⚠ ℹ, y si no, cae a √ × ‼ i, que se ven bien en cualquier sitio.
- *
- * Es la misma idea que chalk con los colores: la librería se encarga de
- * saber qué soporta el sitio donde escribes.
- */
+// SIMBOLOS Y MENSAJES
 export const icono = {
     exito: simbolos.success,
     error: simbolos.error,
@@ -80,13 +48,7 @@ export const mensaje = {
     info: (texto) => `${icono.info} ${chalk.cyan(texto)}`,
 }
 
-/**
- * Colorea el estado de cualquier registro según lo que significa.
- *
- * Los seis módulos tienen estados, y varios comparten nombre ("activo" lo
- * usan clientes, proyectos y contratos). Traducirlos a color en un único
- * sitio evita que cada menú invente su propio criterio.
- */
+// COLOREA LOS ESTADOS DE UN REGISTRO
 export function colorEstado(estado) {
     const verdes = ['activo', 'aceptada', 'aprobado', 'finalizado', 'firmado']
     const rojos = ['rechazada', 'rechazado', 'cancelado', 'anulado', 'inactivo']
@@ -100,12 +62,7 @@ export function colorEstado(estado) {
     return texto
 }
 
-/**
- * La barra de avance, coloreada según lo lleno que esté.
- *
- * Vivía en formato.js sin color; la traemos aquí porque ahora su aspecto
- * es una decisión de estilo, no de formato.
- */
+// BARRA DE AVANCE
 export function barraDeAvance(porcentaje, ancho = 22) {
     const lleno = Math.round((porcentaje / 100) * ancho)
 
