@@ -1,27 +1,12 @@
 import { Cliente } from '../models/Cliente.js'
 
-/**
- * CAPA DE SERVICIO — aquí viven las REGLAS DE NEGOCIO.
- *
- * SRP (Responsabilidad Única, la S de SOLID):
- *   - el menú     -> solo habla con el usuario (preguntas y mensajes)
- *   - el servicio -> solo decide qué es válido y qué no  <-- ESTE ARCHIVO
- *   - el repositorio -> solo lee y escribe en MongoDB
- *
- * En tu app.js, `createUser` hacía las tres cosas a la vez. Separarlas
- * significa que estas reglas se pueden probar sin abrir la consola, y
- * reutilizar desde cualquier sitio (una API web, por ejemplo).
- *
- * DIP (Inversión de Dependencias, la D de SOLID):
- * el repositorio llega por el constructor, no se crea aquí dentro. Este
- * servicio no sabe si por debajo hay MongoDB, PostgreSQL o un array.
- */
+// CAPA DE SERVICIO: reglas de negocio sobre clientes. Se encarga de validar, crear, editar, desactivar y reactivar clientes.
 export class ClienteService {
     constructor(clienteRepositorio) {
         this.repositorio = clienteRepositorio
     }
 
-    /** REGLA: el email no se puede repetir. */
+    // REGLA: el email no se puede repetir.
     async crear(datos) {
         const cliente = new Cliente(datos)
         cliente.validar() // el propio objeto se valida (POO)
@@ -36,8 +21,6 @@ export class ClienteService {
             )
         }
 
-        // El código legible se pide aquí, no en el modelo: generarlo toca la
-        // base de datos (colección `contadores`) y eso es cosa del servicio.
         documento.codigo = await this.repositorio.siguienteCodigo('CLI')
 
         await this.repositorio.crear(documento)
@@ -48,18 +31,12 @@ export class ClienteService {
         return this.repositorio.listar()
     }
 
-    /**
-     * Solo los clientes activos.
-     *
-     * Lo usan las listas donde hay que ELEGIR un cliente: no tiene sentido
-     * ofrecer uno desactivado si luego la regla de negocio va a rechazarlo.
-     * Mejor no enseñar lo que no se puede elegir.
-     */
+    // REGLA: solo los activos se pueden usar en propuestas y proyectos.
     async listarActivos() {
         return this.repositorio.listar({ activo: true })
     }
 
-    /** Los desactivados. Solo se usa en la pantalla de reactivar. */
+    // Los desactivados. Solo se usa en la pantalla de reactivar.
     async listarInactivos() {
         return this.repositorio.listar({ activo: false })
     }
@@ -71,33 +48,11 @@ export class ClienteService {
         return this.repositorio.buscarPorTexto(texto.trim())
     }
 
-    /**
-     * REGLA: un cliente NUNCA se elimina, se desactiva.
-     *
-     * Motivo real de negocio: si borráramos el cliente, sus propuestas,
-     * proyectos y facturas quedarían apuntando a un cliente inexistente y el
-     * histórico contable se rompería. Desactivar conserva la trazabilidad.
-     */
-    /**
-     * Edita los datos de un cliente.
-     *
-     * TRUCO PARA NO DUPLICAR LAS VALIDACIONES:
-     *
-     * en vez de escribir aquí otra vez "el nombre necesita 3 caracteres, el
-     * email necesita una arroba…", mezclamos lo que ya había con lo que llega
-     * nuevo y construimos un `Cliente` completo con el resultado. Ese objeto
-     * se valida solo, igual que al crearlo.
-     *
-     * Así las reglas viven en un único sitio: el modelo. Si mañana el email
-     * pasa a exigir algo más, crear y editar lo respetan sin tocar nada aquí.
-     */
+    // REGLA: NO SE PUEDE ELIMINAR UN CLIENTE. Solo se puede desactivar y reactivar.
     async editar(referencia, cambios) {
         const cliente = await this.repositorio.buscarPorIdOCodigo(referencia)
         if (!cliente) throw new Error(`No existe ningún cliente con la referencia "${referencia}".`)
 
-        // `??` y no `||`: si el usuario borra la empresa a propósito, llega
-        // como null y queremos respetarlo. Con `||` un valor vacío legítimo
-        // se sustituiría por el anterior.
         const fusionado = new Cliente({
             nombre: cambios.nombre ?? cliente.nombre,
             email: cambios.email ?? cliente.email,

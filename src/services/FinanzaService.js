@@ -1,12 +1,7 @@
 import { Movimiento } from '../models/Movimiento.js'
 import { aFechaLocal, finDelDiaLocal, redondearDinero } from '../utils/formato.js'
 
-/**
- * Reglas de negocio del dinero.
- *
- * Es el servicio más delicado: aquí un error significa que tu contabilidad
- * miente. La tercera transacción del proyecto vive aquí.
- */
+// REGLAS DE NEGOCIO PARA FINANZAS
 export class FinanzaService {
     constructor(movimientoRepositorio, proyectoRepositorio, clienteRepositorio, mongoClient) {
         this.movimientos = movimientoRepositorio
@@ -15,17 +10,7 @@ export class FinanzaService {
         this.mongoClient = mongoClient
     }
 
-    /**
-     * ⭐ REGISTRAR MOVIMIENTO — OPERACIÓN TRANSACCIONAL
-     *
-     * Dos colecciones:
-     *   1. se guarda el movimiento                        (movimientos)
-     *   2. se actualiza el acumulado del proyecto con $inc (proyectos)
-     *
-     * Si se guardara el movimiento pero fallara el acumulado, el proyecto
-     * diría que le deben dinero que ya cobró. El balance dejaría de cuadrar
-     * y encontrar el descuadre después es una pesadilla.
-     */
+    // REGLA: REGISTRAR MOVIMIENTO (ingreso o egreso) — transaccional
     async registrar(datos) {
         const session = this.mongoClient.startSession()
 
@@ -49,8 +34,7 @@ export class FinanzaService {
 
                 const documento = movimiento.aDocumento()
 
-                // ----- ANTI-DUPLICIDAD (primera defensa) -----
-                // Si la referencia ya existe, es el mismo pago otra vez.
+                // REFERENCIA ÚNICA: no se puede registrar dos veces el mismo pago.
                 const repetido = await this.movimientos.buscarPorReferencia(
                     documento.referencia,
                     session,
@@ -61,14 +45,9 @@ export class FinanzaService {
                             `(${repetido.concepto}). Ese pago ya se contabilizó.`,
                     )
                 }
-                // La segunda defensa es el índice único de MongoDB sobre
-                // `referencia`. Ver MovimientoRepositorio.crearIndices().
 
-                // ----- REGLA: no puedes cobrar más de lo pactado -----
+                // REGLA: no se puede registrar un ingreso que supere lo pactado en el proyecto.
                 if (documento.tipo === 'ingreso') {
-                    // Redondeado: si el pendiente arrastrara un residuo de
-                    // coma flotante, el pago final exacto se rechazaría por
-                    // una millonésima de quetzal.
                     const pendiente = redondearDinero(proyecto.monto - (proyecto.cobrado ?? 0))
                     if (documento.monto > pendiente) {
                         throw new Error(
@@ -78,14 +57,11 @@ export class FinanzaService {
                     }
                 }
 
-                // --- Paso 1: guardar el movimiento ---
-                // El código se pide DENTRO de la transacción y con la sesión:
-                // si la transacción se deshace, el contador también vuelve
-                // atrás y no se queda un MOV-0007 quemado sin movimiento.
+                // PASO 1: crear el movimiento y asignarle un código único
                 documento.codigo = await this.movimientos.siguienteCodigo('MOV', session)
                 const id = await this.movimientos.crear(documento, session)
 
-                // --- Paso 2: actualizar el acumulado del proyecto ---
+                // PASO 2: actualizar el acumulado del proyecto
                 const campo = documento.tipo === 'ingreso' ? 'cobrado' : 'gastado'
                 await this.proyectos.incrementarAcumulado(
                     String(proyecto._id),
@@ -103,13 +79,7 @@ export class FinanzaService {
         }
     }
 
-    /**
-     * ⭐ ANULAR — también transaccional, y en sentido contrario.
-     *
-     * Un movimiento no se borra nunca (perderías el rastro contable): se
-     * marca como anulado y se RESTA del acumulado. Fíjate en el `-monto`:
-     * es el mismo $inc, pero con signo negativo.
-     */
+    // ANULAR MOVIMIENTO — transaccional
     async anular(referencia, motivo) {
         const session = this.mongoClient.startSession()
 
@@ -154,26 +124,7 @@ export class FinanzaService {
         }
     }
 
-    /**
-     * Edita un movimiento — pero SOLO su concepto.
-     *
-     * ESTA ES LA DECISIÓN MÁS DELIBERADA DEL PROYECTO, y conviene poder
-     * defenderla: un movimiento registrado es un APUNTE CONTABLE, y los
-     * apuntes contables no se editan. Nunca.
-     *
-     * Si se pudiera cambiar el monto de un cobro ya registrado, el acumulado
-     * del proyecto quedaría descuadrado en silencio —fue calculado con la
-     * cifra vieja— y no habría forma de saber que alguien lo tocó. Lo mismo
-     * con el tipo o la categoría: moverían el balance sin dejar rastro.
-     *
-     * Lo correcto cuando un importe está mal es ANULAR el movimiento (que
-     * revierte el acumulado y deja constancia del motivo) y registrar uno
-     * nuevo con la cifra correcta. El error queda visible, que es justo lo
-     * que la contabilidad necesita.
-     *
-     * El `concepto` sí se puede corregir porque es una descripción para
-     * leerlo, no un dato que entre en ningún cálculo.
-     */
+    // EDITAR CONCEPTO DE MOVIMIENTO 
     async editarConcepto(referencia, concepto) {
         const movimiento = await this.movimientos.buscarPorIdOCodigo(referencia)
         if (!movimiento) {
@@ -199,17 +150,11 @@ export class FinanzaService {
         return this.movimientos.listarFiltrado(filtros)
     }
 
-    /** Para las listas de elegir del menú de finanzas. */
     async listarProyectos() {
         return this.proyectos.listar()
     }
 
-    /**
-     * Balance general, opcionalmente entre dos fechas.
-     *
-     * Las fechas se interpretan en hora local y el "hasta" incluye el día
-     * entero. Ver el comentario largo en MovimientoRepositorio.listarFiltrado.
-     */
+    // BALANCE GENERAL: ingresos, egresos y utilidad, opcionalmente filtrado por fecha
     async balance({ desde, hasta } = {}) {
         const filtro = {}
         if (desde || hasta) {
@@ -220,14 +165,14 @@ export class FinanzaService {
         return this.movimientos.sumarPorTipo(filtro)
     }
 
-    /** Balance de cada cliente, ordenado por el que más deja. */
+    // Balance de cada cliente, ordenado por el que más deja.
     async balancePorCliente() {
         const clientes = await this.clientes.listar()
         const filas = []
 
         for (const cliente of clientes) {
             const totales = await this.movimientos.sumarPorTipo({ clienteId: cliente._id })
-            // No mostramos clientes sin ningún movimiento: solo hacen ruido.
+            // No mostramos clientes sin ningún movimiento
             if (totales.ingresos === 0 && totales.egresos === 0) continue
             filas.push({ cliente: cliente.nombre, ...totales })
         }
@@ -235,9 +180,7 @@ export class FinanzaService {
         return filas.sort((a, b) => b.balance - a.balance)
     }
 
-    /**
-     * Rentabilidad de un proyecto: lo pactado frente a lo cobrado y gastado.
-     */
+    // RENTABILIDAD DE UN PROYECTO: cuánto ha costado, cuánto se ha cobrado y el margen
     async rentabilidad(referencia) {
         const proyecto = await this.proyectos.buscarPorIdOCodigo(referencia)
         if (!proyecto) throw new Error(`No existe ningún proyecto con la referencia "${referencia}".`)
@@ -252,8 +195,6 @@ export class FinanzaService {
             gastado: totales.egresos,
             utilidad: totales.balance,
             pendienteDeCobro: proyecto.monto - totales.ingresos,
-            // Margen sobre lo cobrado. Si no ha cobrado nada, no hay margen
-            // que calcular (y dividir entre 0 daría Infinity).
             margen:
                 totales.ingresos === 0
                     ? 0

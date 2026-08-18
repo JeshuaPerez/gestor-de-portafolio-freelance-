@@ -1,13 +1,7 @@
 import { Entregable } from '../models/Entregable.js'
 import { aFechaLocal } from '../utils/formato.js'
 
-/**
- * Reglas de negocio de los entregables.
- *
- * Aquí está la segunda transacción importante: cambiar el estado de un
- * entregable recalcula el avance del proyecto. Los dos datos tienen que
- * cuadrar SIEMPRE.
- */
+// REGLAS DE NEGOCIO PARA ENTREGABLES
 export class EntregableService {
     constructor(entregableRepositorio, proyectoRepositorio, mongoClient) {
         this.entregables = entregableRepositorio
@@ -15,7 +9,7 @@ export class EntregableService {
         this.mongoClient = mongoClient
     }
 
-    /** REGLA: la fecha límite no puede pasarse de la fecha de fin del proyecto. */
+    // REGLA: FECHA LÍMITE no puede ser posterior al fin del proyecto
     async crear(datos) {
         const proyecto = await this.proyectos.buscarPorIdOCodigo(datos.proyectoId)
         if (!proyecto) {
@@ -47,25 +41,17 @@ export class EntregableService {
         return this.entregables.listarVencidos()
     }
 
-    /** Proyectos activos: los únicos que admiten entregables nuevos. */
+    // Proyectos activos: los únicos que admiten entregables nuevos.
     async listarProyectosActivos() {
         return this.proyectos.listarPorEstado('activo')
     }
 
-    /** Todos los proyectos, para consultar entregables de cualquiera. */
+    // Todos los proyectos, para consultar entregables de cualquiera.
     async listarProyectos() {
         return this.proyectos.listar()
     }
 
-    /**
-     * Calcula el avance del proyecto a partir de sus entregables.
-     *
-     * Cada entregable tiene un PESO. El avance es:
-     *     suma de pesos aprobados / suma de todos los pesos * 100
-     *
-     * Ejemplo: diseño (peso 30, aprobado) + desarrollo (peso 70, pendiente)
-     *          -> 30 / 100 = 30% de avance.
-     */
+    // CALCULAR AVANCE: porcentaje de peso aprobado sobre el total de peso. Si no hay entregables, devuelve 0.
     calcularAvance(entregables) {
         const pesoTotal = entregables.reduce((suma, e) => suma + e.peso, 0)
         if (pesoTotal === 0) return 0 // sin entregables no hay nada que calcular
@@ -77,18 +63,7 @@ export class EntregableService {
         return Math.round((pesoAprobado / pesoTotal) * 100)
     }
 
-    /**
-     * ⭐ CAMBIAR ESTADO — OPERACIÓN TRANSACCIONAL CON ROLLBACK
-     *
-     * Dos colecciones otra vez:
-     *   1. el entregable cambia de estado + se anota en su historial (entregables)
-     *   2. el avance del proyecto se recalcula                        (proyectos)
-     *
-     * SI EL PASO 2 FALLA, EL PASO 1 SE DESHACE. El entregable vuelve a su
-     * estado anterior. Nunca tendrás un entregable aprobado con el avance del
-     * proyecto sin actualizar: esos dos datos se contradirían y el cliente
-     * vería un proyecto al 30% con todo entregado.
-     */
+    // CAMBIAR ESTADO — transaccional: cambia el estado, anota el historial y recalcula el avance del proyecto.
     async cambiarEstado(referencia, estadoNuevo, motivo) {
         const session = this.mongoClient.startSession()
 
@@ -101,7 +76,6 @@ export class EntregableService {
                     throw new Error(`No existe ningún entregable con la referencia "${referencia}".`)
                 }
 
-                // ¿Es una transición permitida? (ver la tabla en el modelo)
                 if (!Entregable.puedeCambiar(entregable.estado, estadoNuevo)) {
                     const posibles = Entregable.TRANSICIONES[entregable.estado]
                     throw new Error(
@@ -117,7 +91,7 @@ export class EntregableService {
                     throw new Error('Debes indicar el motivo del rechazo (mínimo 5 caracteres).')
                 }
 
-                // --- Paso 1: cambiar el estado y anotar el historial ---
+                // PASO 1: cambiar el estado y anotar el historial ---
                 await this.entregables.actualizar(
                     entregable._id,
                     { estado: estadoNuevo, actualizadoEn: new Date() },
@@ -134,9 +108,7 @@ export class EntregableService {
                     session,
                 )
 
-                // --- Paso 2: recalcular el avance del proyecto ---
-                // Leemos DENTRO de la transacción: así vemos el cambio del
-                // paso 1, que todavía no está confirmado en disco.
+                // PASO 2: recalcular el avance del proyecto ---
                 const hermanos = await this.entregables.listarPorProyecto(
                     entregable.proyectoId,
                     session,
@@ -163,20 +135,7 @@ export class EntregableService {
         }
     }
 
-    /**
-     * ⭐ EDITAR — transaccional, y aquí el motivo es interesante.
-     *
-     * Editar un entregable parece inofensivo, pero uno de sus campos es el
-     * PESO, y el peso decide cuánto vale ese entregable dentro del avance
-     * del proyecto. Si el diseño pesaba 30 sobre 100 y lo cambias a 60, el
-     * avance del proyecto deja de ser cierto en ese mismo instante.
-     *
-     * Por eso la edición va en transacción: se guarda el cambio Y se
-     * recalcula el avance, o no se hace ninguna de las dos cosas.
-     *
-     * REGLA: solo se editan los que están pendientes o rechazados. Cambiarle
-     * el peso a algo ya aprobado sería reescribir la historia.
-     */
+    // EDITAR — transaccional: valida todo el modelo, actualiza y recalcula el avance del proyecto.
     async editar(referencia, cambios) {
         const session = this.mongoClient.startSession()
 
@@ -258,12 +217,7 @@ export class EntregableService {
         }
     }
 
-    /**
-     * ⭐ ELIMINAR — también transaccional.
-     *
-     * Al borrar un entregable, el avance del proyecto cambia (los pesos ya no
-     * son los mismos). Borrar sin recalcular dejaría un avance mentiroso.
-     */
+    // ELIMINAR — transaccional: no se puede eliminar un entregable aprobado. Recalcula el avance del proyecto.
     async eliminar(referencia) {
         const session = this.mongoClient.startSession()
 

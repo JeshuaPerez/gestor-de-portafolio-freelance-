@@ -1,11 +1,6 @@
 import { aFechaLocal } from '../utils/formato.js'
 
-/**
- * Reglas de negocio de los proyectos.
- *
- * Un proyecto no se crea desde aquí: nace de una propuesta aceptada
- * (ver PropuestaService.aceptar). Este servicio gestiona su ciclo de vida.
- */
+// REGLAS DE NEGOCIO PARA PROYECTOS
 export class ProyectoService {
     constructor(proyectoRepositorio, clienteRepositorio, entregableRepositorio) {
         this.proyectos = proyectoRepositorio
@@ -22,12 +17,7 @@ export class ProyectoService {
         return this.proyectos.listarPorEstado('activo')
     }
 
-    /**
-     * Devuelve el proyecto con el nombre del cliente incorporado.
-     *
-     * En Mongo los datos están separados: el proyecto guarda `clienteId`, no
-     * el nombre. Aquí hacemos la segunda consulta para mostrarlo.
-     */
+    // Devuelve el proyecto con el nombre del cliente incorporado.
     async verFicha(referencia) {
         const proyecto = await this.proyectos.buscarPorIdOCodigo(referencia)
         if (!proyecto) throw new Error(`No existe ningún proyecto con la referencia "${referencia}".`)
@@ -36,22 +26,7 @@ export class ProyectoService {
         return { ...proyecto, cliente }
     }
 
-    /**
-     * Edita los datos descriptivos de un proyecto.
-     *
-     * SOLO nombre, descripción y fecha de fin prevista, y solo mientras esté
-     * ACTIVO.
-     *
-     * ¿POR QUÉ NO SE PUEDE EDITAR EL MONTO AQUÍ? Porque el monto no es un
-     * dato del proyecto: viene de la propuesta que el cliente aceptó y del
-     * contrato que se firmó. Cambiarlo por detrás dejaría el contrato
-     * diciendo una cifra y el proyecto otra, y además movería el saldo
-     * pendiente sobre el que se calculan los cobros. Si el precio cambia, se
-     * cambia en el contrato, que es el documento con valor.
-     *
-     * Tampoco el avance: para eso está `registrarAvance`, que sí comprueba
-     * que no retroceda ni pise el cálculo de los entregables.
-     */
+    // Edita los datos descriptivos de un proyecto.
     async editar(referencia, cambios) {
         const proyecto = await this.proyectos.buscarPorIdOCodigo(referencia)
         if (!proyecto) throw new Error(`No existe ningún proyecto con la referencia "${referencia}".`)
@@ -74,7 +49,6 @@ export class ProyectoService {
             actualizadoEn: new Date(),
         }
 
-        // La fecha de fin no puede quedar antes de que el proyecto empezara.
         if (cambios.fechaFinEstimada) {
             const nueva = aFechaLocal(cambios.fechaFinEstimada)
             if (nueva < new Date(proyecto.fechaInicio)) {
@@ -87,13 +61,11 @@ export class ProyectoService {
         return { ...proyecto, ...actualizacion }
     }
 
-    /**
-     * REGLAS del avance:
-     *   - entre 0 y 100
-     *   - no puede retroceder (un trabajo hecho no se deshace)
-     *   - no se registran avances en proyectos cerrados
-     *   - si el proyecto tiene entregables, el avance NO se toca a mano
-     */
+    //  REGLAS del avance:
+    //  entre 0 y 100
+    //  no puede retroceder (un trabajo hecho no se deshace)
+    //  no se registran avances en proyectos cerrados
+    //  si el proyecto tiene entregables, el avance NO se toca a mano
     async registrarAvance(referencia, porcentaje) {
         const proyecto = await this.proyectos.buscarPorIdOCodigo(referencia)
         if (!proyecto) throw new Error(`No existe ningún proyecto con la referencia "${referencia}".`)
@@ -102,15 +74,6 @@ export class ProyectoService {
             throw new Error(`El proyecto está ${proyecto.estado}: no admite avances.`)
         }
 
-        /*
-         * UNA SOLA FUENTE DE VERDAD.
-         *
-         * Si el proyecto tiene entregables, su avance lo calcula
-         * EntregableService a partir de los pesos. Permitir además un avance
-         * manual haría que los dos datos se contradijeran: el proyecto diría
-         * 80% y los entregables 30%. ¿Cuál es el bueno? Por eso, en cuanto
-         * hay entregables, el avance manual se bloquea.
-         */
         const entregables = await this.entregables.listarPorProyecto(proyecto._id)
         if (entregables.length > 0) {
             throw new Error(
@@ -131,7 +94,7 @@ export class ProyectoService {
         return { ...proyecto, avance: nuevo }
     }
 
-    /** REGLA: no se finaliza un proyecto a medias. */
+    // REGLA: FINALIZAR PROYECTO COMPLETO
     async finalizar(referencia) {
         const proyecto = await this.proyectos.buscarPorIdOCodigo(referencia)
         if (!proyecto) throw new Error(`No existe ningún proyecto con la referencia "${referencia}".`)

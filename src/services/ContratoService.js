@@ -1,11 +1,6 @@
 import { formatearDinero, formatearFecha } from '../utils/formato.js'
 
-/**
- * Reglas de negocio de los contratos.
- *
- * El contrato no se crea aquí: nace en borrador dentro de la transacción de
- * PropuestaService.aceptar(). Este servicio lo edita, lo firma y lo imprime.
- */
+// REGLA DE NEGOCIO PARA CONTRATOS
 export class ContratoService {
     constructor(contratoRepositorio, proyectoRepositorio, clienteRepositorio, mongoClient) {
         this.contratos = contratoRepositorio
@@ -18,12 +13,12 @@ export class ContratoService {
         return estado ? this.contratos.listarPorEstado(estado) : this.contratos.listar()
     }
 
-    /** Los borradores: los únicos editables y los únicos firmables. */
+    // Los borradores: los únicos editables y los únicos firmables.
     async listarBorradores() {
         return this.contratos.listarPorEstado('borrador')
     }
 
-    /** Para la lista de elegir cuando se busca el contrato de un proyecto. */
+    // Para la lista de elegir cuando se busca el contrato de un proyecto.
     async listarProyectos() {
         return this.proyectos.listar()
     }
@@ -38,13 +33,7 @@ export class ContratoService {
         return contrato
     }
 
-    /**
-     * REGLA: solo los borradores son editables. Un contrato firmado no se toca.
-     *
-     * El valor SÍ se puede corregir mientras sea borrador — es el precio que
-     * todavía se está negociando. Una vez firmado, el contrato es el
-     * documento que vale y cambiarlo por detrás no tendría sentido.
-     */
+    // REGLA: solo los borradores son editables. Un contrato firmado no se toca.
     async editar(referencia, { condiciones, formaPago, valor }) {
         const contrato = await this.contratos.buscarPorIdOCodigo(referencia)
         if (!contrato) throw new Error(`No existe ningún contrato con la referencia "${referencia}".`)
@@ -75,16 +64,7 @@ export class ContratoService {
         return { ...contrato, ...cambios }
     }
 
-    /**
-     * ⭐ FIRMAR CONTRATO — OPERACIÓN TRANSACCIONAL
-     *
-     * Al firmar pasan dos cosas en dos colecciones:
-     *   1. el contrato pasa de 'borrador' a 'activo'  (contratos)
-     *   2. el proyecto queda marcado como formalizado (proyectos)
-     *
-     * Si solo se guardara el paso 1, tendrías un contrato firmado sobre un
-     * proyecto que no sabe que lo está. Por eso van juntos.
-     */
+    // FIRMAR CONTRATO — transaccional: activa el contrato y sincroniza el proyecto.
     async firmar(referencia) {
         const session = this.mongoClient.startSession()
 
@@ -129,7 +109,7 @@ export class ContratoService {
         }
     }
 
-    /** Genera el texto del contrato para copiarlo o imprimirlo. */
+    // Genera el texto del contrato para copiarlo o imprimirlo.
     async generarDocumento(referencia) {
         const contrato = await this.contratos.buscarPorIdOCodigo(referencia)
         if (!contrato) throw new Error(`No existe ningún contrato con la referencia "${referencia}".`)

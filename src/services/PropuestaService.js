@@ -2,16 +2,7 @@ import { Propuesta } from '../models/Propuesta.js'
 import { Proyecto } from '../models/Proyecto.js'
 import { Contrato } from '../models/Contrato.js'
 
-/**
- * =====================================================================
- *  ESTE ES EL ARCHIVO MÁS IMPORTANTE DEL PROYECTO.
- *  Aquí vive la TRANSACCIÓN.
- * =====================================================================
- *
- * El servicio recibe todo lo que necesita por el constructor (DIP):
- * los repositorios con los que trabaja y el cliente de MongoDB, que hace
- * falta para abrir sesiones de transacción.
- */
+// TRANSACCIONES 
 export class PropuestaService {
     constructor(
         propuestaRepositorio,
@@ -48,62 +39,25 @@ export class PropuestaService {
         return estado ? this.propuestas.listarPorEstado(estado) : this.propuestas.listar()
     }
 
-    /**
-     * Solo las pendientes: las únicas que se pueden aceptar o rechazar.
-     *
-     * Las listas de elegir usan esto en vez de `listar()`. Ofrecer una
-     * propuesta ya aceptada solo sirve para que el usuario la elija y se
-     * lleve un error. Mejor no enseñar lo que no se puede usar.
-     */
+    // SOLO PENDIENTES
     async listarPendientes() {
         return this.propuestas.listarPorEstado('pendiente')
     }
 
-    /**
-     * Los clientes a los que se les puede hacer una propuesta.
-     *
-     * El menú de propuestas necesita enseñar esta lista para que elijas.
-     * Se la damos desde aquí, y no inyectando ClienteService en el menú,
-     * porque este servicio YA tiene el repositorio de clientes (lo usa para
-     * validar) y así el menú sigue hablando con un único servicio.
-     */
+    // CLIENTES ACTIVOS: solo se pueden aceptar propuestas de clientes activos.
     async listarClientesDisponibles() {
         return this.clientes.listar({ activo: true })
     }
 
-    /**
-     * =================================================================
-     *  ⭐ ACEPTAR PROPUESTA — OPERACIÓN TRANSACCIONAL
-     * =================================================================
-     *
-     * Al aceptar una propuesta pasan TRES cosas en TRES colecciones:
-     *
-     *   1. la propuesta cambia a estado 'aceptada'   (colección propuestas)
-     *   2. nace un proyecto derivado de ella          (colección proyectos)
-     *   3. nace su contrato en borrador               (colección contratos)
-     *
-     * EL PROBLEMA SIN TRANSACCIÓN: imagina que el paso 1 se guarda y el
-     * paso 2 falla (se cae la red, el código ya existe...). Te quedas con
-     * una propuesta marcada como "aceptada" que no tiene ningún proyecto.
-     * Datos incoherentes, y nadie se entera hasta que es tarde.
-     *
-     * LA SOLUCIÓN: meter los tres pasos en una transacción. MongoDB los trata
-     * como uno solo: o se guardan LOS TRES, o no se guarda NINGUNO (rollback).
-     *
-     * La clave está en pasar la MISMA `session` a todas las operaciones.
-     * Si olvidas pasarla en una sola de ellas, esa operación queda fuera de
-     * la transacción y no se deshace. Es el fallo más típico.
-     */
+    // ACEPTAR PROPUESTA: crea proyecto y contrato en borrador, todo en una transacción.
     async aceptar(propuestaId) {
         const session = this.mongoClient.startSession()
 
         try {
             let proyectoCreado = null
 
-            // Todo lo que ocurra dentro de esta función es "todo o nada".
-            // Si lanzamos un error aquí dentro, MongoDB deshace lo hecho.
             await session.withTransaction(async () => {
-                // --- Paso 0: comprobaciones (leyendo DENTRO de la transacción) ---
+                // PASO 0 COMPROBACIONES 
                 const propuesta = await this.propuestas.buscarPorIdOCodigo(propuestaId, session)
                 if (!propuesta) {
                     throw new Error(`No existe ninguna propuesta con la referencia "${propuestaId}".`)
@@ -116,23 +70,21 @@ export class PropuestaService {
                     )
                 }
 
-                // --- Paso 1: marcar la propuesta como aceptada ---
-                // Usamos `propuesta._id`, no lo que escribió el usuario: si
-                // vino un código (PRO-0001), aquí ya hace falta el _id real.
+                // PASO 1: marcar la propuesta como aceptada
                 await this.propuestas.actualizar(
                     propuesta._id,
                     { estado: 'aceptada', aceptadaEn: new Date() },
-                    session, // <-- la sesión: sin esto, no forma parte de la transacción
+                    session,
                 )
 
-                // --- Paso 2: crear el proyecto derivado ---
+                // PASO 2: crear el proyecto a partir de la propuesta
                 const codigo = await this.proyectos.siguienteCodigo('PRY', session)
                 const proyecto = Proyecto.desdePropuesta(propuesta, codigo) // Factory Method
                 proyecto.validar()
 
                 const proyectoId = await this.proyectos.crear(proyecto.aDocumento(), session)
 
-                // --- Paso 3: crear el contrato en borrador ---
+                // PASO 3: crear el contrato en borrador
                 const codigoContrato = await this.contratos.siguienteCodigo('CON', session)
                 const contrato = Contrato.desdeProyecto(proyecto, proyectoId, codigoContrato)
                 contrato.validar()
@@ -148,23 +100,11 @@ export class PropuestaService {
 
             return proyectoCreado
         } finally {
-            // `finally` se ejecuta siempre, haya ido bien o mal. Las sesiones
-            // sin cerrar dejan recursos abiertos en el servidor.
             await session.endSession()
         }
     }
 
-    /**
-     * Edita una propuesta.
-     *
-     * REGLA: solo mientras esté PENDIENTE.
-     *
-     * En cuanto se acepta, esa propuesta ya generó un proyecto y un contrato
-     * que copiaron su monto y su plazo. Cambiarla después dejaría al proyecto
-     * diciendo una cifra y a la propuesta otra, sin que nada avise. Si hay
-     * que corregir algo de una propuesta aceptada, se corrige en el contrato,
-     * que es el documento que vale.
-     */
+    // EDITAR PROPUESTA: solo se pueden editar las pendientes, y se valida todo el modelo.
     async editar(referencia, cambios) {
         const propuesta = await this.propuestas.buscarPorIdOCodigo(referencia)
         if (!propuesta) {
@@ -203,7 +143,7 @@ export class PropuestaService {
         return { ...propuesta, ...documento }
     }
 
-    /** REGLA: solo se rechazan propuestas pendientes, y con motivo. */
+    // REGLA DE NEGOCIO: rechazar propuesta
     async rechazar(propuestaId, motivo) {
         const propuesta = await this.propuestas.buscarPorIdOCodigo(propuestaId)
         if (!propuesta) {
@@ -216,10 +156,6 @@ export class PropuestaService {
         if (!motivo || motivo.trim().length < 5) {
             throw new Error('Debes indicar el motivo del rechazo (mínimo 5 caracteres).')
         }
-
-        // Aquí NO hace falta transacción: solo tocamos una colección.
-        // Usar transacciones donde no se necesitan es un error común: cuestan
-        // rendimiento y complican el código sin aportar nada.
         await this.propuestas.actualizar(propuesta._id, {
             estado: 'rechazada',
             motivoRechazo: motivo.trim(),
@@ -229,7 +165,7 @@ export class PropuestaService {
         return propuesta
     }
 
-    /** Tasa de conversión: cuántas propuestas acaban en proyecto. */
+    // REGLA DE NEGOCIO: estadísticas de conversión
     async estadisticas() {
         const total = await this.propuestas.contar()
         const aceptadas = await this.propuestas.contar({ estado: 'aceptada' })
@@ -241,7 +177,6 @@ export class PropuestaService {
             aceptadas,
             rechazadas,
             pendientes,
-            // Evitamos dividir entre 0 cuando aún no hay propuestas.
             conversion: total === 0 ? 0 : Math.round((aceptadas / total) * 100),
         }
     }
