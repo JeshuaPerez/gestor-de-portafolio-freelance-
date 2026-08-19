@@ -15,12 +15,12 @@ import { mostrarTabla } from '../utils/tabla.js'
 
 const ESTADOS = ['pendiente', 'aceptada', 'rechazada']
 
-/** Una línea por cliente, para la lista de elegir. */
+// UNA LÍNEA POR CLIENTE, PARA LA LISTA DE ELEGIR.
 function describirCliente(c) {
     return `${(c.codigo ?? '---').padEnd(9)} ${c.nombre.padEnd(24)} <${c.email}>`
 }
 
-/** Una línea por propuesta, para la lista de elegir. */
+// UNA LÍNEA POR PROPUESTA, PARA LA LISTA DE ELEGIR.
 function describirPropuesta(p) {
     return `${p.codigo.padEnd(9)} ${p.titulo.padEnd(30)} ${formatearDinero(p.monto)}`
 }
@@ -33,7 +33,6 @@ function mostrarPropuestas(propuestas) {
             p.motivoRechazo ? `${p.titulo}\n${estilo.tenue(p.motivoRechazo)}` : p.titulo,
             estilo.dinero(formatearDinero(p.monto)),
             `${p.plazoDias} días`,
-            // La fecha, y debajo en tenue cuánto falta: "en 12 días".
             `${formatearFecha(p.fechaVencimiento)}\n${estilo.tenue(fechaRelativa(p.fechaVencimiento))}`,
             colorEstado(p.estado),
         ]),
@@ -63,9 +62,6 @@ export async function menuPropuestas(propuestaService) {
                 case 'crear': {
                     console.log(estilo.titulo('\n--- Nueva propuesta ---'))
                     console.log(AVISO_CANCELAR)
-
-                    // Primero se elige el cliente de la lista: así no hay
-                    // forma de teclear un cliente que no existe.
                     const cliente = await elegirDeLista(
                         await propuestaService.listarClientesDisponibles(),
                         {
@@ -118,9 +114,6 @@ export async function menuPropuestas(propuestaService) {
                     console.log(estilo.titulo('\n--- Editar propuesta ---'))
                     console.log(AVISO_CANCELAR)
 
-                    // Solo se ofrecen las pendientes: una propuesta aceptada
-                    // ya generó proyecto y contrato, y cambiarla los dejaría
-                    // diciendo cifras distintas.
                     const propuesta = await elegirDeLista(
                         await propuestaService.listarPendientes(),
                         {
@@ -169,7 +162,7 @@ export async function menuPropuestas(propuestaService) {
                         ),
                     )
 
-                    // Solo se ofrecen las pendientes: las demás darían error.
+                    // SOLO SE OFRECEN LAS PENDIENTES: LAS DEMÁS DARÍAN ERROR.
                     const propuesta = await elegirDeLista(
                         await propuestaService.listarPendientes(),
                         {

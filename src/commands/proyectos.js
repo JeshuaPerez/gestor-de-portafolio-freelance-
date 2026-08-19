@@ -15,7 +15,7 @@ import { mostrarTabla } from '../utils/tabla.js'
 
 const ESTADOS = ['activo', 'finalizado', 'cancelado']
 
-/** Una línea por proyecto, para las listas de elegir. */
+// UNA LÍNEA POR PROYECTO, PARA LAS LISTAS DE ELEGIR.
 function describirProyecto(p) {
     return `${p.codigo.padEnd(9)} ${p.nombre.padEnd(30)} ${String(p.avance).padStart(3)}%  ${p.estado}`
 }
@@ -143,9 +143,6 @@ export async function menuProyectos(proyectoService) {
                         siVacio: 'No hay proyectos activos.',
                     })
 
-                    // El mínimo es el avance actual: la regla dice que no
-                    // puede retroceder, así que lo decimos ANTES de preguntar
-                    // en vez de rechazarlo después.
                     const porcentaje = await pedirNumero('Nuevo avance', {
                         min: proyecto.avance,
                         max: 100,

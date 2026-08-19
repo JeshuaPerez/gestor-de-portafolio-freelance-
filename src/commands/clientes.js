@@ -11,26 +11,18 @@ import {
 import { colorEstado, estilo, mensaje } from '../utils/estilo.js'
 import { mostrarTabla } from '../utils/tabla.js'
 
-/**
- * CAPA DE PRESENTACIÓN — lo único que hace es hablar con el usuario.
- *
- * Fíjate que en este archivo NO aparece la palabra `db` ni `collection` ni
- * `ObjectId`. Pregunta, llama al servicio y muestra el resultado. Nada más.
- * Esa es la separación de responsabilidades en la práctica.
- *
- * Tampoco valida (eso vive en `entrada.js`) ni decide colores (eso vive en
- * `estilo.js`). Este archivo solo decide QUÉ se pregunta y en qué orden.
- */
 
-/** Una línea por cliente, para las listas donde hay que elegir. */
+//  CAPA DE PRESENTACIÓN - ITERACCION CON EL USUARIO
+
+// UNA lINEA POR CLIENTE, PARA LAS LISTAS DONDE HAY QUE ELEGIR.
+
 function describirCliente(c) {
-    // padEnd rellena con espacios hasta un ancho fijo: así los correos
-    // quedan alineados en columna y la lista se lee de un vistazo.
     const codigo = (c.codigo ?? '---').padEnd(9)
     return `${codigo} ${c.nombre.padEnd(24)} <${c.email}>`
 }
 
-/** Imprime una lista de clientes como tabla. */
+//IMPRIME UNA LISTA DE CLIENTES COMO TABLA
+
 function mostrarClientes(clientes) {
     mostrarTabla({
         cabeceras: ['Código', 'Nombre', 'Email', 'Empresa', 'Estado'],
@@ -47,16 +39,6 @@ function mostrarClientes(clientes) {
 }
 
 export async function menuClientes(clienteService) {
-    /*
-     * OJO, ERROR COMÚN DE JUNIOR:
-     * en tu app.js cada función terminaba llamando otra vez a `menu(db)`.
-     * Eso es RECURSIÓN: el menú se llama a sí mismo y ninguna llamada termina
-     * nunca. Tras cientos de operaciones la pila de llamadas crece hasta
-     * reventar ("Maximum call stack size exceeded").
-     *
-     * Lo correcto es un BUCLE: cada operación termina de verdad y volvemos
-     * al inicio del while.
-     */
     while (true) {
         const accion = await elegirAccion('GESTIÓN DE CLIENTES', [
             { nombre: 'Crear cliente', valor: 'crear' },
@@ -70,21 +52,12 @@ export async function menuClientes(clienteService) {
             { nombre: 'Volver al menú principal', valor: 'volver' },
         ])
 
-        /*
-         * Todo el bloque va dentro de un try/catch.
-         * Los servicios lanzan errores con mensajes claros ("El email ya
-         * existe"); aquí los atrapamos y los mostramos. Así un error NUNCA
-         * cierra la aplicación: el usuario ve el motivo y vuelve al menú.
-         */
+        //TODO EL BLOQUE VA DENTRO DE UN TRY/CATCH.
         try {
             switch (accion) {
                 case 'crear': {
                     console.log(estilo.titulo('\n--- Nuevo cliente ---'))
                     console.log(AVISO_CANCELAR)
-
-                    // Cada pregunta se valida sola y vuelve a preguntar si el
-                    // dato no sirve. El usuario ya no pierde lo que llevaba
-                    // escrito por equivocarse en el último campo.
                     const nombre = await pedirTexto('Nombre', { min: 3, ejemplo: 'Ana Gómez' })
                     const email = await pedirEmail('Email')
                     const empresa = await pedirTexto('Empresa', {
@@ -131,10 +104,6 @@ export async function menuClientes(clienteService) {
                     console.log(
                         estilo.tenue('  Cada campo viene con su valor actual: pulsa Enter para dejarlo igual.'),
                     )
-
-                    // `actual` precarga el valor: el usuario lo conserva con
-                    // Enter o escribe encima. Son las MISMAS funciones que en
-                    // el alta; lo único que cambia es que llevan datos.
                     const nombre = await pedirTexto('Nombre', { min: 3, actual: cliente.nombre })
                     const email = await pedirEmail('Email', { actual: cliente.email })
                     const empresa = await pedirTexto('Empresa', {
@@ -153,23 +122,12 @@ export async function menuClientes(clienteService) {
 
                 case 'desactivar': {
                     console.log(estilo.titulo('\n--- Desactivar cliente ---'))
-
-                    /*
-                     * ANTES: 'ID del cliente a desactivar: ' y a copiar y pegar
-                     * 24 caracteres desde otra pantalla.
-                     *
-                     * AHORA: se enseña lo que hay y se elige con las flechas.
-                     * El servicio sigue recibiendo un identificador; lo que
-                     * cambió es cómo lo consigue el usuario.
-                     */
                     const cliente = await elegirDeLista(await clienteService.listarActivos(), {
                         etiqueta: 'Elige el cliente a desactivar',
                         describir: describirCliente,
                         siVacio: 'No hay clientes activos que desactivar.',
                     })
 
-                    // Buena práctica: las acciones destructivas se confirman,
-                    // y la confirmación dice EXACTAMENTE sobre qué actúa.
                     const seguro = await confirmar(
                         `¿Desactivar a "${cliente.nombre}" (${cliente.codigo})?`,
                     )
@@ -201,18 +159,10 @@ export async function menuClientes(clienteService) {
                 }
 
                 case 'volver':
-                    return // sale del while y vuelve al menú principal
+                    return
+                    // sale del while y vuelve al menú principal
             }
         } catch (error) {
-            /*
-             * Distinguimos dos cosas muy distintas que antes se veían igual:
-             *
-             *   - cancelar    -> el usuario decidió parar. No es un fallo.
-             *   - error real  -> algo salió mal y hay que explicarlo.
-             *
-             * Poder separarlas es la ventaja de que `OperacionCancelada` sea
-             * una clase propia y no un Error genérico.
-             */
             if (error instanceof OperacionCancelada) {
                 console.log('\n' + mensaje.aviso('Operación cancelada.'))
             } else {

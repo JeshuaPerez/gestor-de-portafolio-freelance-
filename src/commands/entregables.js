@@ -16,30 +16,23 @@ import { diasHasta, fechaRelativa, formatearFecha } from '../utils/formato.js'
 import { panelTransaccion } from '../utils/panel.js'
 import { mostrarTabla } from '../utils/tabla.js'
 
-/** Una línea por proyecto, para las listas de elegir. */
+//UNA LINEA POR PROYECTO, PARA LAS LISTAS DE ELEGIR.
 function describirProyecto(p) {
     return `${p.codigo.padEnd(9)} ${p.nombre.padEnd(30)} ${String(p.avance).padStart(3)}%`
 }
 
-/** Una línea por entregable, para las listas de elegir. */
+// UNA LINEA POR ENTREGABLE, PARA LAS LISTAS DE ELEGIR.
 function describirEntregable(e) {
     const codigo = (e.codigo ?? '---').padEnd(9)
     return `${codigo} ${e.titulo.padEnd(28)} peso ${String(e.peso).padStart(3)}  ${e.estado}`
 }
 
-/**
- * La fecha límite, coloreada según lo urgente que sea.
- *
- * Aquí es donde dayjs se gana el sitio: en vez de una fecha suelta que hay
- * que ir a mirar al calendario, dice "en 3 días" o "hace 5 días", y el
- * color avisa antes de leer.
- */
 function describirLimite(e) {
     const fecha = formatearFecha(e.fechaLimite)
     const cuando = fechaRelativa(e.fechaLimite)
     const dias = diasHasta(e.fechaLimite)
 
-    // Lo aprobado ya no corre prisa, aunque la fecha haya pasado.
+    // LO APROBADO YA NO CORRE PRISA, AUNQUE LA FECHA HAYA PASADO.
     if (e.estado === 'aprobado') return `${fecha}\n${estilo.tenue(cuando)}`
     if (dias < 0) return `${fecha}\n${estilo.error(`VENCIDO ${cuando}`)}`
     if (dias <= 3) return `${fecha}\n${estilo.aviso(cuando)}`
@@ -69,12 +62,6 @@ function mostrarEntregables(entregables) {
     })
 }
 
-/**
- * Elige primero el proyecto y después uno de sus entregables.
- *
- * Se repite en dos opciones del menú, así que lo sacamos a una función: es
- * el mismo principio DRY que aplicamos en entrada.js, pero a nivel de menú.
- */
 async function elegirEntregableDeUnProyecto(entregableService, etiqueta) {
     const proyecto = await elegirDeLista(await entregableService.listarProyectos(), {
         etiqueta: 'Elige el proyecto',
@@ -220,14 +207,6 @@ export async function menuEntregables(entregableService) {
                         'Elige el entregable',
                     )
 
-                    /*
-                     * SOLO SE OFRECEN LAS TRANSICIONES LEGALES.
-                     *
-                     * La tabla de transiciones vive en el modelo. Aquí la
-                     * leemos para construir el menú, en vez de dejar que el
-                     * usuario escriba un estado imposible y llevarse un error.
-                     * La regla sigue estando en UN solo sitio: el modelo.
-                     */
                     const posibles = Entregable.TRANSICIONES[entregable.estado]
                     if (posibles.length === 0) {
                         throw new Error(
@@ -238,7 +217,8 @@ export async function menuEntregables(entregableService) {
                     console.log(`\n  Estado actual: ${colorEstado(entregable.estado)}`)
                     const estado = await pedirOpcion('Nuevo estado', posibles)
 
-                    // El motivo solo se pide cuando hace falta.
+                    // EL MOTIVO SOLO SE PIDE CUANDO HACE FALTA.
+
                     let motivo = null
                     if (estado === 'rechazado') {
                         motivo = await pedirTexto('Motivo del rechazo', {
