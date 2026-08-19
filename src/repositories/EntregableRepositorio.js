@@ -6,18 +6,10 @@ export class EntregableRepositorio extends BaseRepositorio {
         super(db, 'entregables')
     }
 
-    /**
-     * Todos los entregables de un proyecto.
-     *
-     * Acepta `session` porque se llama DENTRO de la transacción que recalcula
-     * el avance: necesitamos leer los datos tal y como van quedando dentro de
-     * la transacción, no como están en disco.
-     */
     async listarPorProyecto(proyectoId, session) {
         return this.coleccion.find({ proyectoId }, { session }).sort({ fechaLimite: 1 }).toArray()
     }
 
-    /** Entregables cuya fecha límite ya pasó y siguen sin aprobar. */
     async listarVencidos() {
         return this.coleccion
             .find({
@@ -28,10 +20,6 @@ export class EntregableRepositorio extends BaseRepositorio {
             .toArray()
     }
 
-    /**
-     * Añade una entrada al historial del entregable.
-     * `$push` agrega un elemento a un array sin tocar los que ya había.
-     */
     async agregarAlHistorial(id, entrada, session) {
         await this.coleccion.updateOne(
             { _id: new ObjectId(id) },

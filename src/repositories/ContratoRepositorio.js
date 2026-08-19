@@ -16,7 +16,7 @@ export class ContratoRepositorio extends BaseRepositorio {
     async crearIndices() {
         await this.prepararColeccion()
         await this.coleccion.createIndex({ codigo: 1 }, { unique: true })
-        // REGLA EN LA BASE DE DATOS: un proyecto, un solo contrato.
+        // REGLA EN LA BASE DE DATOS: UN PROYECTO, UN SOLO CONTRATO.
         await this.coleccion.createIndex({ proyectoId: 1 }, { unique: true })
     }
 }

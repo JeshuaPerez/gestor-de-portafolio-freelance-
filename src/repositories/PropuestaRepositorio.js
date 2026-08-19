@@ -5,20 +5,19 @@ export class PropuestaRepositorio extends BaseRepositorio {
         super(db, 'propuestas')
     }
 
-    /** Propuestas de un cliente concreto. */
+    // PROPUESTAS DE UN CLIENTE CONCRETO.
     async listarPorCliente(clienteId, session) {
         return this.coleccion.find({ clienteId }, { session }).toArray()
     }
 
-    /** Propuestas filtradas por estado: pendiente, aceptada o rechazada. */
+    // PROPUESTAS FILTRADAS POR ESTADO: PENDIENTE, ACEPTADA O RECHAZADA.
     async listarPorEstado(estado) {
         return this.coleccion.find({ estado }).sort({ codigo: 1 }).toArray()
     }
 
     async crearIndices() {
         await this.prepararColeccion()
-        // La colección de contadores se usa para generar PRO-0001, PRO-0002...
-        // Debe existir antes de la primera transacción.
+        
         const existeContadores = await this.db.listCollections({ name: 'contadores' }).hasNext()
         if (!existeContadores) await this.db.createCollection('contadores')
 
