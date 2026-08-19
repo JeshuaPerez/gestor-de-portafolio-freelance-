@@ -1,10 +1,4 @@
-/**
- * POO: MODELO Proyecto.
- *
- * Un proyecto NO se crea a mano: nace siempre de una propuesta aceptada.
- * Por eso el constructor principal es el método estático `desdePropuesta`:
- * el propio modelo sabe cómo derivarse de una propuesta.
- */
+// POO: MODELO PROYECTO.
 export class Proyecto {
     static ESTADOS = ['activo', 'finalizado', 'cancelado']
 
@@ -16,9 +10,7 @@ export class Proyecto {
         this.descripcion = descripcion
         this.monto = Number(monto)
         this.estado = 'activo'
-        this.avance = 0 // porcentaje 0-100
-        // Acumulados financieros. Se actualizan con $inc cada vez que se
-        // registra un movimiento, dentro de la misma transacción.
+        this.avance = 0 
         this.cobrado = 0
         this.gastado = 0
         this.fechaInicio = new Date()
@@ -32,14 +24,7 @@ export class Proyecto {
         return fecha
     }
 
-    /**
-     * FACTORY METHOD (patrón de diseño).
-     *
-     * En vez de que el servicio vaya copiando campo por campo de la
-     * propuesta al proyecto, el modelo se encarga de construirse. Si mañana
-     * el proyecto hereda un campo más de la propuesta, se cambia AQUÍ y solo
-     * aquí.
-     */
+    // FACTORY METHOD (PATRÓN DE DISEÑO).
     static desdePropuesta(propuesta, codigo) {
         return new Proyecto({
             propuestaId: propuesta._id,

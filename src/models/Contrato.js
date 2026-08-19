@@ -1,11 +1,5 @@
-/**
- * POO: MODELO Contrato.
- *
- * El contrato formaliza el proyecto. Nace en BORRADOR junto con el proyecto
- * (dentro de la misma transacción) y solo se vuelve ACTIVO cuando se firma.
- *
- * Regla del negocio: un proyecto tiene como máximo UN contrato.
- */
+//POO: MODELO CONTRATO.
+
 export class Contrato {
     static ESTADOS = ['borrador', 'activo', 'finalizado', 'cancelado']
 
@@ -29,7 +23,7 @@ export class Contrato {
         return fecha
     }
 
-    /** FACTORY METHOD: el contrato se deriva del proyecto recién creado. */
+    //FACTORY METHOD: EL CONTRATO SE DERRIVA DEL PROYECTO RECIENTE CREADO.
     static desdeProyecto(proyecto, proyectoId, codigo) {
         return new Contrato({
             proyectoId,
