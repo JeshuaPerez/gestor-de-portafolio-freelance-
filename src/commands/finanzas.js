@@ -16,12 +16,12 @@ import { formatearDinero, formatearFecha } from '../utils/formato.js'
 import { comoFicha, mostrarPanel, panelTransaccion } from '../utils/panel.js'
 import { mostrarTabla } from '../utils/tabla.js'
 
-/** Una línea por proyecto, para las listas de elegir. */
+// UNA LINEA POR PROYECTO, PARA LAS LISTAS DE ELEGIR.
 function describirProyecto(p) {
     return `${p.codigo.padEnd(9)} ${p.nombre.padEnd(30)} ${formatearDinero(p.monto)}`
 }
 
-/** Una línea por movimiento, para la lista de elegir. */
+// UNA LINEA POR MOVIMIENTO, PARA LA LISTA DE ELEGIR.
 function describirMovimiento(m) {
     const signo = m.tipo === 'ingreso' ? '+' : '-'
     const codigo = (m.codigo ?? '---').padEnd(9)
@@ -32,8 +32,7 @@ function mostrarMovimientos(movimientos) {
     mostrarTabla({
         cabeceras: ['Código', 'Monto', 'Concepto', 'Tipo / Categoría', 'Referencia', 'Fecha'],
         filas: movimientos.map((m) => {
-            // El dinero que entra en verde, el que sale en rojo: se lee de
-            // un vistazo sin tener que mirar la columna del tipo.
+            // EL DINERO QUE ENTRA EN VERDE, EL QUE SALE, EN ROJO.
             const entra = m.tipo === 'ingreso'
             const monto = `${entra ? '+' : '-'}${formatearDinero(m.monto)}`
             return [
@@ -52,7 +51,7 @@ function mostrarMovimientos(movimientos) {
 }
 
 function mostrarBalance(titulo, { ingresos, egresos, balance }) {
-    // El balance en rojo si es negativo: estás perdiendo dinero.
+    // EL BALANCE EN ROJO SI ES NEGATIVO: ESTAS PERDIENDO DINERO.
     const color = balance >= 0 ? estilo.dinero : estilo.error
 
     mostrarPanel({
@@ -103,13 +102,6 @@ export async function menuFinanzas(finanzaService) {
 
                     const tipo = await pedirOpcion('Tipo de movimiento', Movimiento.TIPOS)
 
-                    /*
-                     * REGLA CRUZADA: las categorías dependen del tipo.
-                     *
-                     * Como el tipo ya está elegido, solo enseñamos las
-                     * categorías que le corresponden. Antes se listaban a modo
-                     * de pista y el usuario podía escribir una del otro tipo.
-                     */
                     const categoria = await pedirOpcion(
                         `Categoría del ${tipo}`,
                         Movimiento.CATEGORIAS[tipo],
@@ -120,8 +112,6 @@ export async function menuFinanzas(finanzaService) {
                         ejemplo: 'Anticipo del 50%',
                     })
 
-                    // Si es un ingreso, el tope es el saldo pendiente: lo
-                    // avisamos en la propia pregunta en vez de rechazarlo luego.
                     const monto = await pedirNumero('Monto en quetzales', {
                         min: 1,
                         max: tipo === 'ingreso' ? pendiente : null,
@@ -271,8 +261,7 @@ export async function menuFinanzas(finanzaService) {
                         ),
                     )
 
-                    // `listar()` ya excluye los anulados, así que no se puede
-                    // elegir uno que ya lo esté.
+                    // `listar()` YA EXCLUYE LOS ANULADOS, ASÍ QUE NO SE PUEDE ELEGIR UNO QUE YA LO ESTÉ.
                     const movimiento = await elegirDeLista(await finanzaService.listar({}), {
                         etiqueta: 'Elige el movimiento a anular',
                         describir: describirMovimiento,

@@ -13,12 +13,12 @@ import { formatearDinero, formatearFecha } from '../utils/formato.js'
 import { mostrarPanel, panelTransaccion } from '../utils/panel.js'
 import { mostrarTabla } from '../utils/tabla.js'
 
-/** Una línea por contrato, para las listas de elegir. */
+// UNA LINEA POR CONTRATO, PARA LAS LISTAS DE ELEGIR.
 function describirContrato(c) {
     return `${c.codigo.padEnd(9)} ${formatearDinero(c.valor).padEnd(16)} ${c.estado}`
 }
 
-/** Una línea por proyecto, para la lista de elegir. */
+// UNA LINEA POR PROYECTO, PARA LA LISTA DE ELEGIR.
 function describirProyecto(p) {
     return `${p.codigo.padEnd(9)} ${p.nombre.padEnd(30)} ${p.estado}`
 }
@@ -139,8 +139,7 @@ export async function menuContratos(contratoService) {
                         describir: describirContrato,
                         siVacio: 'Todavía no hay contratos.',
                     })
-                    // El documento va en su propio recuadro: es lo que el
-                    // cliente firmaría, conviene que se distinga del resto.
+
                     mostrarPanel({
                         titulo: ` Contrato ${contrato.codigo} `,
                         lineas: (await contratoService.generarDocumento(contrato._id)).split('\n'),
