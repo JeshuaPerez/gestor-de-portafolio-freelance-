@@ -177,26 +177,45 @@ Finanzas → Registrar ingreso → Rentabilidad
 ```
 freelance-portfolio-cli/
 │
-├── index.js                     # Punto de entrada: aquí se arma la aplicación
-├── package.json
-├── .env.example                 # Plantilla de variables de entorno
-├── .gitignore
-├── README.md
+├── index.js                       # Arranca, muestra el menú y cierra. Nada más.
 │
 ├── src/
 │   ├── config/
-│   │   └── database.js          # Conexión a MongoDB — SINGLETON
+│   │   ├── database.js            # Conexión a MongoDB — SINGLETON
+│   │   └── contenedor.js          # COMPOSITION ROOT: el único sitio con `new`
 │   │
-│   ├── models/                  # Entidades: forma del dato y sus validaciones
+│   ├── errors/
+│   │   └── errores.js             # ValidacionError, ReglaNegocioError,
+│   │                              # NoEncontradoError, ConflictoError...
+│   ├── validacion/
+│   │   └── reglas.js              # Motor de validación: de UNAS reglas salen
+│   │                              # la validación, el $jsonSchema y las preguntas
+│   ├── models/                    # Entidades: forma del dato y sus reglas
+│   │   ├── Modelo.js              # Base común (Template Method)
 │   │   ├── Cliente.js
 │   │   ├── Propuesta.js
-│   │   ├── Proyecto.js          # + FACTORY METHOD (desdePropuesta)
-│   │   ├── Contrato.js          # + FACTORY METHOD (desdeProyecto)
-│   │   ├── Entregable.js        # + máquina de estados (TRANSICIONES)
-│   │   └── Movimiento.js        # + categorías cruzadas con el tipo
+│   │   ├── Proyecto.js            # + FACTORY METHOD (desdePropuesta)
+│   │   ├── Contrato.js            # + FACTORY METHOD (desdeProyecto)
+│   │   ├── Entregable.js
+│   │   ├── Movimiento.js
+│   │   └── estados/
+│   │       └── EstadoEntregable.js  # PATRÓN STATE: una clase por estado
 │   │
-│   ├── repositories/            # Acceso a datos — REPOSITORY
-│   │   ├── BaseRepositorio.js   # CRUD genérico, códigos consecutivos, sesiones
+│   ├── dominio/                   # Lógica de negocio pura, sin base de datos
+│   │   ├── valores.js             # Fechas y dinero (el dominio ya no usa utils)
+│   │   ├── CalculadoraAvance.js   # PATRÓN STRATEGY: manual vs. por entregables
+│   │   └── SincronizadorAvance.js # PATRÓN OBSERVER: recalcula al oír un evento
+│   │
+│   ├── eventos/
+│   │   └── EmisorEventos.js       # OBSERVER (sujeto): avisa en serie y con await
+│   │
+│   ├── persistencia/
+│   │   └── UnidadDeTrabajo.js     # UNIT OF WORK: "hazlo atómico" como abstracción
+│   │
+│   ├── repositories/              # Acceso a datos — REPOSITORY (en 3 niveles, ISP)
+│   │   ├── RepositorioLectura.js     # consultar
+│   │   ├── RepositorioEscritura.js   # + crear / actualizar
+│   │   ├── RepositorioEliminable.js  # + borrar  (solo lo hereda Entregable)
 │   │   ├── ClienteRepositorio.js
 │   │   ├── PropuestaRepositorio.js
 │   │   ├── ProyectoRepositorio.js
@@ -204,37 +223,63 @@ freelance-portfolio-cli/
 │   │   ├── EntregableRepositorio.js
 │   │   └── MovimientoRepositorio.js
 │   │
-│   ├── services/                # Reglas de negocio y TRANSACCIONES
+│   ├── services/                  # Reglas de negocio y operaciones atómicas
 │   │   ├── ClienteService.js
-│   │   ├── PropuestaService.js  # ★ aceptar → propuesta + proyecto + contrato
+│   │   ├── PropuestaService.js    # ★ aceptar → propuesta + proyecto + contrato
 │   │   ├── ProyectoService.js
-│   │   ├── ContratoService.js   # ★ firmar
-│   │   ├── EntregableService.js # ★ cambiar estado / eliminar
-│   │   └── FinanzaService.js    # ★ registrar / anular movimiento
+│   │   ├── ContratoService.js     # ★ firmar
+│   │   ├── EntregableService.js   # ★ cambiar estado / editar / eliminar
+│   │   └── FinanzaService.js      # ★ registrar / anular movimiento
 │   │
-│   ├── commands/                # 🎮 Presentación: los seis menús
+│   ├── commands/                  # Presentación
+│   │   ├── registro.js            # Los módulos del menú principal (OCP)
+│   │   ├── comun.js               # Manejo de errores compartido por los menús
 │   │   ├── clientes.js
 │   │   ├── propuestas.js
-│   │   ├── proyectos.js
-│   │   ├── contratos.js
-│   │   ├── entregables.js
+│   │   ├── proyectos.js           # Contiene entregables y contrato
+│   │   ├── entregables.js         # menuEntregablesDeProyecto(proyecto, …)
+│   │   ├── contratos.js           # menuContratoDeProyecto(proyecto, …)
 │   │   └── finanzas.js
 │   │
-│   └── utils/                   # Utilidades transversales
-│       ├── entrada.js           # Preguntar Y validar (sobre inquirer)
-│       ├── estilo.js            # Colores con significado (chalk)
-│       ├── tabla.js             # Tablas (cli-table3)
-│       ├── panel.js             # Recuadros (boxen)
-│       ├── formato.js           # Dinero, fechas y zona horaria (dayjs)
-│       └── espera.js            # Indicador de progreso (ora)
+│   └── utils/                     # Presentación transversal
+│       ├── entrada.js             # Preguntar y validar (sobre inquirer)
+│       ├── estilo.js              # Colores con significado (chalk)
+│       ├── tabla.js               # Tablas (cli-table3)
+│       ├── panel.js               # Recuadros (boxen)
+│       ├── formato.js             # Dinero y fechas para pantalla (dayjs)
+│       └── espera.js              # Indicador de progreso (ora)
 │
 └── tests/
-    ├── reglas-negocio.test.js   # 35 pruebas de reglas y transacciones
-    ├── consola.test.js          # 17 pruebas de la capa de consola
-    ├── pantallas.test.js        #  8 pruebas de las vistas dibujando datos
-    ├── caza-bugs.test.js        # 23 sondas contra errores conocidos
-    └── ayuda-teclado.js         # Teclado y pantalla simulados
+    ├── reglas-negocio.test.js     # 35 pruebas de reglas y transacciones
+    ├── consola.test.js            # 17 pruebas de la capa de consola
+    ├── pantallas.test.js          #  9 pruebas de las vistas dibujando datos
+    ├── caza-bugs.test.js          # 23 sondas contra casos límite
+    └── ayuda-teclado.js           # Teclado y pantalla falsos
 ```
+
+### El menú refleja a quién pertenece cada cosa
+
+Un entregable no existe sin su proyecto, y un contrato tiene relación 1:1 con él.
+Por eso **no son módulos del menú principal**: se entra a ellos desde su proyecto.
+
+```
+MENÚ PRINCIPAL
+├── Clientes
+├── Propuestas
+├── Proyectos          ← aquí vive todo lo del proyecto
+│   └── [elegir uno]
+│       ├── Ver ficha completa
+│       ├── Entregables (N)     → crear, editar, cambiar estado, eliminar
+│       ├── Contrato            → ficha, documento, editar, firmar
+│       ├── Editar datos
+│       ├── Registrar avance
+│       └── Finalizar / Cancelar
+└── Finanzas
+```
+
+Lo único que se queda fuera es **«entregables vencidos»**, que es una alerta
+transversal («qué se me está pasando en todos los proyectos»), no la gestión
+de un entregable concreto.
 
 ### Arquitectura en capas
 
@@ -293,91 +338,346 @@ El menú **solo ofrece las transiciones legales** desde el estado actual: lee es
 
 ---
 
+## Validaciones
+
+### Una regla se escribe UNA vez
+
+Cada modelo declara sus restricciones en un único objeto `REGLAS`:
+
+```js
+// src/models/Entregable.js
+static REGLAS = {
+    titulo:      { tipo: 'texto',  min: 3, max: 150, etiqueta: 'título' },
+    fechaLimite: { tipo: 'fecha',  etiqueta: 'fecha límite' },
+    peso:        { tipo: 'numero', min: 1, max: 1000, etiqueta: 'peso' },
+    estado:      { tipo: 'lista',  valores: EstadoEntregable.claves() },
+}
+```
+
+De esa **misma** declaración salen las tres barreras:
+
+| De `REGLAS` sale | Función | Dónde protege |
+|---|---|---|
+| La validación en memoria | `validarContra()` | Modelos y servicios |
+| El validador de la colección | `aEsquemaMongo()` → `$jsonSchema` | **Dentro de MongoDB** |
+| Los límites de la pregunta | `aOpcionesDeEntrada()` → `pedirSegunRegla()` | La consola |
+
+Antes esto estaba escrito tres veces y podían desincronizarse. De hecho lo
+estaban: la pantalla de propuestas pedía el título con `min: 3` mientras el
+modelo exigía `5`, así que el usuario escribía 4 caracteres, la consola los
+aceptaba y el error saltaba después. Ahora la pregunta **sale** de la regla.
+
+### Editar valida igual que crear
+
+El agujero más serio que había: `crear()` validaba con el modelo, pero
+`editar()` comprobaba dos o tres campos a mano y se saltaba el resto.
+
+```js
+// ANTES — EntregableService.editar: solo miraba el título y el peso
+const titulo = cambios.titulo ?? entregable.titulo
+if (!titulo || titulo.trim().length < 3) throw new Error(...)
+
+// AHORA — se reconstruye el modelo entero y se valida como un alta
+const editado = Entregable.desdeDocumento(documento, cambios)
+editado.validar()
+```
+
+Los cinco servicios que editan (`Cliente`, `Propuesta`, `Proyecto`,
+`Contrato`, `Entregable`) pasan hoy por el mismo `validar()`.
+
+### La base de datos también valida
+
+`prepararColeccion()` aplica el `$jsonSchema` con `collMod`, así que las reglas
+se mantienen al día sin borrar la base. Un documento que no cumpla el esquema
+lo rechaza **MongoDB**, aunque venga de fuera de la aplicación.
+
+### Los errores tienen tipo
+
+Antes todo era `new Error(...)` y la consola imprimía `error.message` sin más:
+un fallo del driver se veía igual que «el email está mal escrito». Ahora:
+
+| Clase | Significa | Cómo se muestra |
+|---|---|---|
+| `ValidacionError` | El dato no cumple su forma | En rojo, nombrando el campo |
+| `ReglaNegocioError` | El dato está bien, la operación no se puede | En rojo |
+| `NoEncontradoError` | No existe ese registro | En amarillo (no es grave) |
+| `ConflictoError` | Choca con algo que ya existe | En rojo |
+| `OperacionCancelada` | El usuario escribió «cancelar» | En amarillo |
+| *cualquier otra* | **Fallo del programa** | «Error inesperado» + aviso |
+
+Además, la validación **acumula** los fallos y los enseña todos de una vez:
+
+```
+✖ El cliente no es válido:
+  · "nombre" necesita al menos 3 caracteres (tiene 2)
+  · "email" no tiene un formato válido (tiene que ser algo@algo.algo)
+  · "teléfono" necesita al menos 7 dígitos (tiene 2)
+```
+
+---
+
 ## Principios SOLID aplicados
 
 ### SRP — Responsabilidad Única
 
-| Archivo | Su única responsabilidad | Lo que NO hace |
-|---|---|---|
-| `models/Cliente.js` | Definir la forma y validez de un cliente | No sabe guardar ni imprimir |
-| `repositories/ClienteRepositorio.js` | Leer y escribir en MongoDB | No conoce reglas de negocio |
-| `services/ClienteService.js` | Aplicar reglas de negocio | No imprime nada por consola |
-| `commands/clientes.js` | Preguntar y mostrar | No consulta la base de datos, ni valida |
-| `utils/entrada.js` | Preguntar y validar la respuesta | No decide qué se pregunta |
-| `utils/estilo.js` | Decidir cómo se ve cada cosa | No decide qué se muestra |
+| Archivo | Su única responsabilidad |
+|---|---|
+| `models/*.js` | Declarar la forma y las reglas de una entidad |
+| `dominio/*.js` | Calcular y decidir, sin saber que existe una base de datos |
+| `repositories/*.js` | Leer y escribir en MongoDB |
+| `services/*.js` | Coordinar reglas de negocio |
+| `commands/*.js` | Preguntar y mostrar |
+| `utils/*.js` | Cómo se ve cada cosa |
 
- Ejemplo pequeño pero claro: `config/database.js` **no imprime nada**. Antes hacía un `console.log` al conectarse, lo que le daba dos trabajos: conectarse y contarlo. Ahora solo se conecta, y quien avisa al usuario es `index.js`.
+Tres acoplamientos que había y se rompieron:
+
+- **`ContratoService` maquetaba el documento del contrato** con sus rayas y su
+  dinero formateado, y para eso importaba `utils/formato.js` — presentación
+  dentro de la capa de negocio. Ahora devuelve datos (`datosParaDocumento`) y
+  quien dibuja es `commands/contratos.js`.
+- **`Entregable` y `Movimiento` importaban de `utils/`.** Las operaciones que de
+  verdad necesitaban (interpretar una fecha, redondear dinero) se mudaron a
+  `dominio/valores.js`. El dominio ya no depende de la capa de pantalla.
+- **`commands/entregables.js` decidía reglas de negocio**: leía
+  `Entregable.TRANSICIONES` para saber a qué estados se podía saltar, y
+  `commands/proyectos.js` repetía la regla «el avance no retrocede» poniendo
+  `min: proyecto.avance` en la pregunta. Las dos decisiones volvieron al dominio.
 
 ### OCP — Abierto/Cerrado
 
--  `repositories/BaseRepositorio.js` no se modifica nunca. Cuando un repositorio necesita algo propio (`buscarPorEmail`, `listarVencidos`), lo **añade** en su propia clase.
--  Añadir un estado nuevo a los entregables es añadir una fila a `Entregable.TRANSICIONES`; ni el servicio ni el menú cambian.
--  Añadir una categoría financiera es añadirla a `Movimiento.CATEGORIAS`; el menú la ofrecerá sola.
+`index.js` tenía una cadena de `if/else` sobre el nombre del módulo: añadir uno
+obligaba a **modificar** el arranque en dos sitios. Ahora el menú se genera desde
+`commands/registro.js` y el despacho es una búsqueda:
+
+```js
+const modulo = buscarModulo(eleccion)
+if (modulo) await modulo.abrir(servicios)
+```
+
+Lo mismo en otros tres puntos:
+
+- Añadir un **estado de entregable** es crear una clase y registrarla; ni el
+  servicio ni el menú se tocan.
+- Añadir un **tipo de regla** de validación es añadir una entrada al mapa `TIPOS`.
+- Añadir un **observador** al recalcular el avance es suscribirlo:
+  `EntregableService` no cambia.
 
 ### LSP — Sustitución de Liskov
 
-Los seis repositorios heredan de `BaseRepositorio` y respetan su contrato: cualquiera puede usarse donde se espere el padre. Ninguno endurece las condiciones ni cambia el significado de los métodos heredados — `crear` siempre crea y devuelve el identificador, `actualizar` siempre devuelve si encontró el documento.
+Los repositorios respetan el contrato de su base. Había una grieta:
+`buscarPorIdOCodigo` aceptaba `"PRY-0001"`, pero `actualizar` hacía
+`new ObjectId(id)` a pelo y reventaba con un error críptico del driver ante ese
+mismo valor — dos métodos de la misma clase con contratos distintos. Ahora pasa
+por `normalizarId()`, que lanza un `ValidacionError` explicando qué usar.
 
 ### ISP — Segregación de Interfaces
 
--  `utils/entrada.js` expone funciones pequeñas y específicas (`pedirTexto`, `pedirNumero`, `pedirFecha`, `pedirEmail`, `confirmar`, `elegirDeLista`) en lugar de un único método gigante con veinte parámetros.
--  Cada menú recibe **solo su servicio**, no un objeto con toda la aplicación.
+El `BaseRepositorio` anterior daba `eliminar()` a los seis repositorios, incluido
+`ClienteRepositorio` — cuando la propia regla del negocio dice que **un cliente
+no se borra nunca**. Heredar un método que tienes prohibido llamar es el ejemplo
+de manual de violación de ISP.
+
+Ahora la jerarquía tiene tres niveles y cada repositorio hereda solo lo que le
+corresponde poder hacer:
+
+| Nivel | Qué añade | Quién lo hereda |
+|---|---|---|
+| `RepositorioLectura` | consultar | *(base de todos)* |
+| `RepositorioEscritura` | crear, actualizar, códigos | Cliente, Propuesta, Proyecto, Contrato, Movimiento |
+| `RepositorioEliminable` | **eliminar** | Solo `EntregableRepositorio` |
+
+El entregable es el único registro que se borra de verdad. Los clientes se
+desactivan, las propuestas se rechazan, los proyectos se cancelan y los
+movimientos se anulan.
 
 ### DIP — Inversión de Dependencias
 
- Todos los servicios reciben sus colaboradores por constructor, nunca los construyen:
+La violación más seria que había: los servicios recibían **`mongoClient`**, el
+cliente del driver de MongoDB, y hacían esto ellos mismos:
 
 ```js
-// src/services/PropuestaService.js
-constructor(propuestaRepositorio, proyectoRepositorio, contratoRepositorio,
-            clienteRepositorio, mongoClient) { … }
+// ANTES — la capa de negocio sabía qué es una sesión de Mongo
+const session = this.mongoClient.startSession()
+try { await session.withTransaction(async () => { … }) }
+finally { await session.endSession() }
 ```
 
- `index.js` es el **único sitio de todo el proyecto** donde se hace `new` de repositorios y servicios. Consecuencias directas:
+La política de alto nivel dependía del detalle de infraestructura. Ahora depende
+de una abstracción, `UnidadDeTrabajo`, y solo dice *«haz esto de forma atómica»*:
 
-- Para probar un servicio se le pasan repositorios falsos sin tocar su código.
-- Cambiar MongoDB por otra base implicaría reescribir `/repositories` y nada más: ningún servicio cambiaría.
+```js
+// AHORA — el servicio no sabe qué base de datos hay debajo
+return this.unidadDeTrabajo.ejecutar(async (contexto) => { … })
+```
+
+`UnidadDeTrabajoMongo` es la implementación real; `UnidadDeTrabajoDirecta`
+ejecuta sin transacción y sirve para probar servicios sin levantar un replica
+set. `src/config/contenedor.js` es el **único sitio del proyecto donde se hace
+`new`** de repositorios y servicios.
 
 ---
 
-##  Patrones de diseño usados
+## Patrones de diseño usados
 
-### 1.  Singleton — `src/config/database.js`
+> **Nota de honestidad.** Dos de los patrones que este README declaraba antes
+> estaban mal etiquetados, y aquí se explica por qué. Un *static factory method*
+> no es el **Factory Method** de GoF, y pasar un callback no es **Strategy**.
+> Los dos se han sustituido por implementaciones reales.
 
-Una única instancia de `MongoClient` compartida por toda la aplicación. La clase guarda su propia instancia en una propiedad estática y la devuelve si alguien intenta crear otra.
+### 1. Singleton — `src/config/database.js`
 
-**Por qué:** abrir un cliente por operación agotaría el pool de conexiones, y sobre todo impediría compartir sesiones coherentes entre repositorios dentro de una misma transacción — una transacción vive dentro de una conexión.
+Una sola instancia de `MongoClient` para toda la aplicación.
 
-### 2.  Repository — `src/repositories/`
-
-Abstrae el acceso a datos. Los servicios hablan de `crear`, `buscarPorId`, `listar`; nunca de `insertOne` o `find`.
-
-**Por qué:** aísla la persistencia en una capa, permite probar los servicios sin base de datos y concentra en un punto la traducción de errores del driver a mensajes de dominio.
-
-La herencia hace el trabajo pesado: `ClienteRepositorio` recibe todo el CRUD de `BaseRepositorio` y solo escribe lo que es exclusivamente suyo.
-
-### 3.  Factory Method — `Proyecto.desdePropuesta()` y `Contrato.desdeProyecto()`
-
-El propio modelo sabe cómo derivarse de otro:
+**Qué estaba mal.** El constructor tenía este guard:
 
 ```js
-const proyecto = Proyecto.desdePropuesta(propuesta, codigo)
+if (Database.instancia) return Database.instancia
 ```
 
-**Por qué:** si el servicio fuera copiando campo por campo, el día que el proyecto herede un dato más de la propuesta habría que recordar cambiarlo allí. Así se cambia en un solo sitio, y es el modelo —que es quien sabe de su propia forma— el que decide.
+…pero la clase **nunca se exportaba**, así que nadie podía llamar a `new` y esa
+línea no se ejecutaba jamás. Era código muerto: lo que había en realidad era un
+módulo con una instancia, no el patrón.
 
-### 4. Strategy (en su forma más simple) — `utils/entrada.js`
+**Cómo está ahora.** El constructor está cerrado y el único acceso es
+`Database.obtenerInstancia()`. Intentar `new Database()` lanza un error que
+explica qué hacer.
 
-`elegirDeLista` no sabe cómo se describe un cliente ni una propuesta. Recibe esa decisión desde fuera:
+**Por qué importa aquí:** una transacción vive dentro de una sesión, y una sesión
+pertenece a un cliente. Con varios clientes los repositorios no podrían compartir
+la misma transacción.
+
+### 2. Repository — `src/repositories/`
+
+Abstrae el acceso a datos: los servicios hablan de `crear`, `buscarPorId` y
+`listar`, nunca de `insertOne` o `find`. Se puede probar la capa de negocio sin
+base de datos, y la traducción de errores del driver a errores del dominio está
+concentrada en un punto.
+
+*(Este ya estaba bien aplicado; lo único que cambió es que ahora son tres niveles
+por ISP.)*
+
+### 3. Factory Method — `EstadoEntregable.desde()`
+
+**Qué estaba mal.** El README llamaba «Factory Method» a
+`Proyecto.desdePropuesta()`. Eso es un *static factory method* (un idiom muy
+útil, pero un idiom): el método siempre construye la misma clase. El **Factory
+Method de GoF** es un método que **delega la decisión de qué clase concreta
+instanciar**.
+
+**Cómo está ahora.** `EstadoEntregable.desde(clave)` consulta un registro de
+implementaciones y devuelve la clase concreta que corresponde:
 
 ```js
-await elegirDeLista(clientes, {
-    etiqueta: 'Elige el cliente',
-    describir: (c) => `${c.codigo}  ${c.nombre}  <${c.email}>`,
+const estado = EstadoEntregable.desde('aprobado')   // → EstadoAprobado
+estado.cuentaParaAvance()                           // → true
+```
+
+Los servicios nunca hacen `new EstadoAprobado()`.
+
+`Proyecto.desdePropuesta()` y `Contrato.desdeProyecto()` siguen existiendo y
+siguen siendo útiles — ahora se documentan por lo que son: **métodos de
+fabricación estáticos** que evitan copiar campo por campo.
+
+### 4. State — `src/models/estados/EstadoEntregable.js`
+
+El patrón que más falta hacía. El ciclo de vida del entregable era una tabla
+`TRANSICIONES` más cuatro reglas repartidas por el código:
+
+| Pregunta | Dónde vivía antes |
+|---|---|
+| ¿Puedo pasar de X a Y? | `EntregableService.cambiarEstado` |
+| ¿Se puede editar? | `['pendiente','rechazado'].includes(estado)` |
+| ¿Se puede borrar? | `if (estado === 'aprobado') throw` |
+| ¿Suma al avance? | `filter(e => e.estado === 'aprobado')` |
+| ¿Qué opciones enseño? | `commands/entregables.js` |
+
+Cinco sitios que revisar al añadir un estado. Ahora **cada estado es una clase que
+responde por sí misma** a todas esas preguntas:
+
+```js
+export class EstadoAprobado extends EstadoEntregable {
+    static clave = 'aprobado'
+    siguientes()         { return [] }      // final
+    cuentaParaAvance()   { return true }
+    permiteEliminacion() { return false }   // lo aprobado es historia
+}
+```
+
+Añadir un estado `en_revision` es crear una clase y registrarla. Nada más cambia.
+
+### 5. Strategy — `src/dominio/CalculadoraAvance.js`
+
+**Qué estaba mal.** El README llamaba «Strategy (en su forma más simple)» a
+pasarle un callback `describir` a `elegirDeLista`. Eso es una **función de orden
+superior**, no Strategy: no hay familia de implementaciones intercambiables.
+
+**Cómo está ahora.** Un proyecto calcula su avance de dos formas incompatibles, y
+esa decisión era un `if` escondido dentro de `ProyectoService` con la fórmula
+viviendo en otro servicio:
+
+```js
+// ANTES — una sola decisión repartida en dos servicios
+if (entregables.length > 0) throw new Error('Este proyecto tiene entregables…')
+```
+
+Ahora son dos estrategias reales y un único sitio que elige:
+
+| Estrategia | Cuándo | `permiteRegistroManual()` |
+|---|---|---|
+| `AvancePorEntregables` | El proyecto tiene entregables | `false` |
+| `AvanceManual` | No tiene | `true` |
+
+```js
+const calculadora = calculadoraPara(proyecto, entregables)
+if (!calculadora.permiteRegistroManual()) throw new ReglaNegocioError(…)
+const nuevo = calculadora.calcular(porcentaje)
+```
+
+### 6. Observer — `src/eventos/` y `src/dominio/SincronizadorAvance.js`
+
+La regla «cuando le pasa algo a un entregable, el avance del proyecto se
+recalcula» estaba **copiada cuatro veces** dentro de `EntregableService` (crear,
+editar, cambiar estado, eliminar), siempre el mismo bloque de leer hermanos,
+calcular y actualizar.
+
+Ahora el servicio solo anuncia lo que ha pasado:
+
+```js
+await this.emisor.emitir(EVENTOS.ENTREGABLE_CAMBIO_ESTADO, {
+    proyectoId: documento.proyectoId,
+    contexto,
 })
 ```
 
-**Por qué:** el "cómo se pinta" se inyecta en lugar de estar escrito dentro, y por eso la misma función sirve para los seis módulos.
+Y `SincronizadorAvance` escucha y recalcula. El servicio ya no sabe que el avance
+del proyecto existe.
+
+**Detalle importante:** los observadores se avisan **en serie y con `await`**,
+porque estos eventos ocurren dentro de una transacción: si el observador falla,
+la transacción entera se deshace.
+
+### 7. Unit of Work — `src/persistencia/UnidadDeTrabajo.js`
+
+Encapsula «haz esto de forma atómica» detrás de una abstracción. Es la pieza que
+arregla el DIP (ver arriba) y la que permite probar los servicios sin un replica
+set.
+
+### 8. Template Method — `src/models/Modelo.js`
+
+Los seis modelos repetían la misma estructura de `validar()` y `aDocumento()`. La
+base define el esqueleto y deja un gancho para lo específico:
+
+```js
+validar() {
+    validarContra(this, this.constructor.REGLAS, this.constructor.entidad)
+    this.validarReglasPropias()   // gancho: reglas que cruzan campos
+    return this
+}
+```
+
+`Movimiento` lo usa para comprobar que la categoría corresponde al tipo
+(«licencias» es válida, pero no para un ingreso), algo que una regla suelta no
+puede expresar.
 
 ---
 
