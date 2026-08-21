@@ -1,13 +1,12 @@
 import { Movimiento } from '../models/Movimiento.js'
 import {
     AVISO_CANCELAR,
-    OperacionCancelada,
     confirmar,
     elegirAccion,
     elegirDeLista,
     pedirFecha,
     pedirNumero,
-    pedirOpcion,
+    pedirSegunRegla,
     pedirTexto,
 } from '../utils/entrada.js'
 import { conSpinner } from '../utils/espera.js'
@@ -15,6 +14,7 @@ import { estilo, mensaje } from '../utils/estilo.js'
 import { formatearDinero, formatearFecha } from '../utils/formato.js'
 import { comoFicha, mostrarPanel, panelTransaccion } from '../utils/panel.js'
 import { mostrarTabla } from '../utils/tabla.js'
+import { ejecutarAccion, encabezado } from './comun.js'
 
 // UNA LINEA POR PROYECTO, PARA LAS LISTAS DE ELEGIR.
 function describirProyecto(p) {
@@ -68,7 +68,7 @@ function mostrarBalance(titulo, { ingresos, egresos, balance }) {
 export async function menuFinanzas(finanzaService) {
     while (true) {
         const accion = await elegirAccion('FINANZAS', [
-            { nombre: '⭐ Registrar ingreso o egreso', valor: 'registrar' },
+            { nombre: 'Registrar ingreso o egreso', valor: 'registrar' },
             { nombre: 'Listar movimientos', valor: 'listar' },
             { nombre: 'Corregir el concepto de un movimiento', valor: 'editar' },
             { separador: true },
@@ -80,7 +80,9 @@ export async function menuFinanzas(finanzaService) {
             { nombre: 'Volver al menú principal', valor: 'volver' },
         ])
 
-        try {
+        if (accion === 'volver') return
+
+        await ejecutarAccion(async () => {
             switch (accion) {
                 case 'registrar': {
                     console.log(estilo.titulo('\n--- Nuevo movimiento ---'))
@@ -100,17 +102,23 @@ export async function menuFinanzas(finanzaService) {
                         estilo.tenue(`  Pendiente de cobro: ${formatearDinero(pendiente)}`),
                     )
 
-                    const tipo = await pedirOpcion('Tipo de movimiento', Movimiento.TIPOS)
-
-                    const categoria = await pedirOpcion(
-                        `Categoría del ${tipo}`,
-                        Movimiento.CATEGORIAS[tipo],
+                    const tipo = await pedirSegunRegla(
+                        'Tipo de movimiento',
+                        Movimiento.REGLAS.tipo,
                     )
 
-                    const concepto = await pedirTexto('Concepto', {
-                        min: 3,
-                        ejemplo: 'Anticipo del 50%',
+                    // Las categorías dependen del tipo, así que la lista se
+                    // arma con las del tipo elegido, no con todas.
+                    const categoria = await pedirSegunRegla(`Categoría del ${tipo}`, {
+                        tipo: 'lista',
+                        valores: Movimiento.CATEGORIAS[tipo],
                     })
+
+                    const concepto = await pedirSegunRegla(
+                        'Concepto',
+                        Movimiento.REGLAS.concepto,
+                        { ejemplo: 'Anticipo del 50%' },
+                    )
 
                     const monto = await pedirNumero('Monto en quetzales', {
                         min: 1,
@@ -118,10 +126,11 @@ export async function menuFinanzas(finanzaService) {
                         ejemplo: '5000',
                     })
 
-                    const referencia = await pedirTexto('Referencia (nº de factura o comprobante)', {
-                        min: 3,
-                        ejemplo: 'FEL-2026-014',
-                    })
+                    const referencia = await pedirSegunRegla(
+                        'Referencia (nº de factura o comprobante)',
+                        Movimiento.REGLAS.referencia,
+                        { ejemplo: 'FEL-2026-014' },
+                    )
 
                     const m = await conSpinner('Registrando dentro de una transacción...', () =>
                         finanzaService.registrar({
@@ -177,10 +186,11 @@ export async function menuFinanzas(finanzaService) {
                         siVacio: 'No hay movimientos que corregir.',
                     })
 
-                    const concepto = await pedirTexto('Concepto', {
-                        min: 3,
-                        actual: movimiento.concepto,
-                    })
+                    const concepto = await pedirSegunRegla(
+                        'Concepto',
+                        Movimiento.REGLAS.concepto,
+                        { actual: movimiento.concepto },
+                    )
 
                     await finanzaService.editarConcepto(movimiento._id, concepto)
                     console.log(
@@ -291,15 +301,7 @@ export async function menuFinanzas(finanzaService) {
                     break
                 }
 
-                case 'volver':
-                    return
             }
-        } catch (error) {
-            if (error instanceof OperacionCancelada) {
-                console.log('\n' + mensaje.aviso('Operación cancelada.'))
-            } else {
-                console.log('\n' + mensaje.error(error.message))
-            }
-        }
+        })
     }
 }

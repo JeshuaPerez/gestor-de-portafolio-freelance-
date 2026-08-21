@@ -1,30 +1,68 @@
-// POO: MODELO PROYECTO.
-export class Proyecto {
+import { enDias } from '../dominio/valores.js'
+import { ValidacionError } from '../errors/errores.js'
+import { Modelo } from './Modelo.js'
+
+// MODELO PROYECTO
+export class Proyecto extends Modelo {
+    static entidad = 'proyecto'
     static ESTADOS = ['activo', 'finalizado', 'cancelado']
 
-    constructor({ propuestaId, clienteId, codigo, nombre, descripcion, monto, plazoDias }) {
+    static REGLAS = {
+        codigo: { tipo: 'texto', min: 7, max: 12, asignadoAlGuardar: true, etiqueta: 'código' },
+        propuestaId: { tipo: 'id', etiqueta: 'propuesta de origen' },
+        clienteId: { tipo: 'id', etiqueta: 'cliente' },
+        nombre: { tipo: 'texto', min: 5, max: 150, etiqueta: 'nombre' },
+        descripcion: { tipo: 'texto', max: 1000, opcional: true, etiqueta: 'descripción' },
+        monto: { tipo: 'numero', min: 0.01, max: 99999999, etiqueta: 'monto' },
+        estado: { tipo: 'lista', valores: Proyecto.ESTADOS, etiqueta: 'estado' },
+        avance: { tipo: 'numero', min: 0, max: 100, etiqueta: 'avance' },
+        // Sin mínimo a propósito: son acumulados que se mueven con $inc y una
+        // anulación los devuelve a cero. Un redondeo a la baja no debe romper
+        // la escritura.
+        cobrado: { tipo: 'numero', etiqueta: 'total cobrado' },
+        gastado: { tipo: 'numero', etiqueta: 'total gastado' },
+        fechaInicio: { tipo: 'fecha', etiqueta: 'fecha de inicio' },
+        fechaFinEstimada: { tipo: 'fecha', etiqueta: 'fin previsto' },
+        creadoEn: { tipo: 'fecha', etiqueta: 'fecha de creación' },
+    }
+
+    constructor({
+        propuestaId,
+        clienteId,
+        codigo = null,
+        nombre,
+        descripcion,
+        monto,
+        plazoDias,
+        estado = 'activo',
+        avance = 0,
+        cobrado = 0,
+        gastado = 0,
+        fechaInicio,
+        fechaFinEstimada,
+        creadoEn,
+    }) {
+        super()
         this.propuestaId = propuestaId
         this.clienteId = clienteId
         this.codigo = codigo
-        this.nombre = nombre
-        this.descripcion = descripcion
+        this.nombre = nombre?.trim() || null
+        this.descripcion = descripcion?.trim() || null
         this.monto = Number(monto)
-        this.estado = 'activo'
-        this.avance = 0 
-        this.cobrado = 0
-        this.gastado = 0
-        this.fechaInicio = new Date()
-        this.fechaFinEstimada = Proyecto.enDias(Number(plazoDias))
-        this.creadoEn = new Date()
+        this.estado = estado
+        this.avance = Number(avance)
+        this.cobrado = Number(cobrado)
+        this.gastado = Number(gastado)
+        this.fechaInicio = fechaInicio ?? new Date()
+        this.fechaFinEstimada = fechaFinEstimada ?? enDias(plazoDias)
+        this.creadoEn = creadoEn ?? new Date()
     }
 
-    static enDias(dias) {
-        const fecha = new Date()
-        fecha.setDate(fecha.getDate() + dias)
-        return fecha
-    }
-
-    // FACTORY METHOD (PATRÓN DE DISEÑO).
+    /**
+     * FACTORY METHOD sobre la propuesta: el proyecto sabe derivarse de ella.
+     * Si mañana el proyecto hereda un campo más de la propuesta, se cambia
+     * aquí y en ningún otro sitio.
+     */
     static desdePropuesta(propuesta, codigo) {
         return new Proyecto({
             propuestaId: propuesta._id,
@@ -37,32 +75,16 @@ export class Proyecto {
         })
     }
 
-    validar() {
-        if (!this.propuestaId) throw new Error('El proyecto debe venir de una propuesta.')
-        if (!this.clienteId) throw new Error('El proyecto debe pertenecer a un cliente.')
-        if (!this.nombre || this.nombre.trim().length < 5) {
-            throw new Error('El nombre del proyecto es obligatorio (mínimo 5 caracteres).')
-        }
-        if (!Number.isFinite(this.monto) || this.monto <= 0) {
-            throw new Error('El monto del proyecto debe ser mayor que 0.')
+    validarReglasPropias() {
+        if (this.fechaFinEstimada < this.fechaInicio) {
+            throw new ValidacionError(
+                'La fecha de fin no puede ser anterior al inicio del proyecto.',
+                { campo: 'fechaFinEstimada' },
+            )
         }
     }
 
-    aDocumento() {
-        return {
-            propuestaId: this.propuestaId,
-            clienteId: this.clienteId,
-            codigo: this.codigo,
-            nombre: this.nombre.trim(),
-            descripcion: this.descripcion ?? null,
-            monto: this.monto,
-            estado: this.estado,
-            avance: this.avance,
-            cobrado: this.cobrado,
-            gastado: this.gastado,
-            fechaInicio: this.fechaInicio,
-            fechaFinEstimada: this.fechaFinEstimada,
-            creadoEn: this.creadoEn,
-        }
+    estaAbierto() {
+        return this.estado === 'activo'
     }
 }

@@ -63,18 +63,23 @@ for (const r of [clientes, propuestas, proyectos, contratos, entregables, movimi
     await r.crearIndices()
 }
 
-const clienteService = new svc.ClienteService(clientes)
-const proyectoService = new svc.ProyectoService(proyectos, clientes, entregables)
-const propuestaService = new svc.PropuestaService(
-    propuestas,
-    proyectos,
-    contratos,
-    clientes,
-    mongoClient,
+// Los servicios se montan con el MISMO composition root que usa la app, asi
+// que la prueba tambien verifica que el cableado real funciona.
+// Fijate en lo que se le pasa ahora: una UnidadDeTrabajo, no el mongoClient.
+const { construirServicios } = await import(`${base}/config/contenedor.js`)
+const { UnidadDeTrabajoMongo } = await import(`${base}/persistencia/UnidadDeTrabajo.js`)
+
+const servicios = construirServicios(
+    { clientes, propuestas, proyectos, contratos, entregables, movimientos },
+    new UnidadDeTrabajoMongo(mongoClient),
 )
-const contratoService = new svc.ContratoService(contratos, proyectos, clientes, mongoClient)
-const entregableService = new svc.EntregableService(entregables, proyectos, mongoClient)
-const finanzaService = new svc.FinanzaService(movimientos, proyectos, clientes, mongoClient)
+
+const clienteService = servicios.clientes
+const proyectoService = servicios.proyectos
+const propuestaService = servicios.propuestas
+const contratoService = servicios.contratos
+const entregableService = servicios.entregables
+const finanzaService = servicios.finanzas
 
 console.log('\n=== CAZA DE BUGS ===\n')
 
@@ -333,12 +338,17 @@ try {
         }
     })
 
-    await sonda('datos', 'el documento del contrato aguanta un cliente borrado', async () => {
-        const doc = await contratoService.generarDocumento('CON-0001')
-        if (!doc.includes('Ana Gomez')) {
-            fallo('datos', 'el documento no trae el nombre del cliente', doc.slice(0, 80))
+    await sonda('datos', 'los datos del contrato traen su cliente y su proyecto', async () => {
+        // El servicio ya no devuelve el documento maquetado (eso es
+        // presentacion y vive en commands/contratos.js): devuelve los datos.
+        const { contrato, cliente, proyecto } = await contratoService.datosParaDocumento('CON-0001')
+
+        if (!cliente || cliente.nombre !== 'Ana Gomez') {
+            fallo('datos', 'los datos del contrato no traen el cliente', JSON.stringify(cliente))
+        } else if (!proyecto || !contrato) {
+            fallo('datos', 'faltan el contrato o el proyecto', JSON.stringify({ contrato, proyecto }))
         } else {
-            ok('el documento del contrato sale completo')
+            ok('los datos del contrato salen completos')
         }
     })
 } finally {

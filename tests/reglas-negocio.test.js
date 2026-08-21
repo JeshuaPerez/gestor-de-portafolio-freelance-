@@ -52,18 +52,23 @@ for (const r of [clientes, propuestas, proyectos, contratos, entregables, movimi
     await r.crearIndices()
 }
 
-const clienteService = new svc.ClienteService(clientes)
-const proyectoService = new svc.ProyectoService(proyectos, clientes, entregables)
-const propuestaService = new svc.PropuestaService(
-    propuestas,
-    proyectos,
-    contratos,
-    clientes,
-    mongoClient,
+// Los servicios se montan con el MISMO composition root que usa la app, asi
+// que la prueba tambien verifica que el cableado real funciona.
+// Fijate en lo que se le pasa ahora: una UnidadDeTrabajo, no el mongoClient.
+const { construirServicios } = await import(`${base}/config/contenedor.js`)
+const { UnidadDeTrabajoMongo } = await import(`${base}/persistencia/UnidadDeTrabajo.js`)
+
+const servicios = construirServicios(
+    { clientes, propuestas, proyectos, contratos, entregables, movimientos },
+    new UnidadDeTrabajoMongo(mongoClient),
 )
-const contratoService = new svc.ContratoService(contratos, proyectos, clientes, mongoClient)
-const entregableService = new svc.EntregableService(entregables, proyectos, mongoClient)
-const finanzaService = new svc.FinanzaService(movimientos, proyectos, clientes, mongoClient)
+
+const clienteService = servicios.clientes
+const proyectoService = servicios.proyectos
+const propuestaService = servicios.propuestas
+const contratoService = servicios.contratos
+const entregableService = servicios.entregables
+const finanzaService = servicios.finanzas
 
 console.log('\n=== FLUJO COMPLETO (base desechable) ===\n')
 
@@ -216,7 +221,17 @@ try {
             () => proyectoService.registrarAvance('PRY-0001', 90),
             /tiene entregables/,
         )
-        assert.equal((await proyectos.buscarPorIdOCodigo('PRY-0001')).avance, 20)
+
+        // CAMBIO DE COMPORTAMIENTO (a mejor).
+        //
+        // Antes el 20% manual de la prueba 9 se quedaba ahi colgado despues de
+        // crear los entregables, y el proyecto decia "20%" con CERO entregables
+        // aprobados. Era un dato mentiroso hasta que alguien cambiaba un estado.
+        //
+        // Ahora, en cuanto el proyecto tiene entregables, la estrategia de
+        // calculo cambia de manual a derivada y el avance se recalcula al
+        // momento: 0 de 100 de peso aprobado = 0%.
+        assert.equal((await proyectos.buscarPorIdOCodigo('PRY-0001')).avance, 0)
     })
 
     await prueba('14. Transiciones ilegales rechazadas', async () => {

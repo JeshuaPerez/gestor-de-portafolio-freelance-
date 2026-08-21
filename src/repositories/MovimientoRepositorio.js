@@ -1,14 +1,20 @@
-import { aFechaLocal, finDelDiaLocal } from '../utils/formato.js'
-import { BaseRepositorio } from './BaseRepositorio.js'
+import { aFechaLocal, finDelDiaLocal } from '../dominio/valores.js'
+import { Movimiento } from '../models/Movimiento.js'
+import { RepositorioEscritura } from './RepositorioEscritura.js'
 
-export class MovimientoRepositorio extends BaseRepositorio {
+// PATRÓN REPOSITORY — MOVIMIENTOS
+// Un movimiento no se borra: se anula, y la anulación revierte el acumulado.
+export class MovimientoRepositorio extends RepositorioEscritura {
     constructor(db) {
         super(db, 'movimientos')
     }
 
-    //CLAVE PARA NO REGISTRAR DOS VECES EL MISMO PAGO.
-    async buscarPorReferencia(referencia, session) {
-        return this.coleccion.findOne({ referencia: referencia.trim().toUpperCase() }, { session })
+    // CLAVE PARA NO REGISTRAR DOS VECES EL MISMO PAGO.
+    async buscarPorReferencia(referencia, contexto) {
+        return this.coleccion.findOne(
+            { referencia: referencia.trim().toUpperCase() },
+            { session: contexto },
+        )
     }
 
     async listarFiltrado({ proyectoId, clienteId, tipo, desde, hasta } = {}) {
@@ -44,7 +50,7 @@ export class MovimientoRepositorio extends BaseRepositorio {
     }
 
     async crearIndices() {
-        await this.prepararColeccion()
+        await this.prepararColeccion(Movimiento.esquemaMongo())
         await this.coleccion.createIndex({ referencia: 1 }, { unique: true })
         await this.coleccion.createIndex({ proyectoId: 1 })
         await this.coleccion.createIndex({ fecha: -1 })

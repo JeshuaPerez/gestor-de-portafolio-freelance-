@@ -1,10 +1,9 @@
+import { Propuesta } from '../models/Propuesta.js'
 import {
     AVISO_CANCELAR,
-    OperacionCancelada,
     elegirAccion,
     elegirDeLista,
-    pedirNumero,
-    pedirOpcion,
+    pedirSegunRegla,
     pedirTexto,
 } from '../utils/entrada.js'
 import { conSpinner } from '../utils/espera.js'
@@ -12,15 +11,14 @@ import { colorEstado, estilo, mensaje } from '../utils/estilo.js'
 import { fechaRelativa, formatearDinero, formatearFecha } from '../utils/formato.js'
 import { comoFicha, mostrarPanel, panelTransaccion } from '../utils/panel.js'
 import { mostrarTabla } from '../utils/tabla.js'
+import { ejecutarAccion, encabezado } from './comun.js'
 
-const ESTADOS = ['pendiente', 'aceptada', 'rechazada']
+// CAPA DE PRESENTACIÓN — PROPUESTAS
 
-// UNA LÍNEA POR CLIENTE, PARA LA LISTA DE ELEGIR.
 function describirCliente(c) {
     return `${(c.codigo ?? '---').padEnd(9)} ${c.nombre.padEnd(24)} <${c.email}>`
 }
 
-// UNA LÍNEA POR PROPUESTA, PARA LA LISTA DE ELEGIR.
 function describirPropuesta(p) {
     return `${p.codigo.padEnd(9)} ${p.titulo.padEnd(30)} ${formatearDinero(p.monto)}`
 }
@@ -50,18 +48,21 @@ export async function menuPropuestas(propuestaService) {
             { nombre: 'Filtrar por estado', valor: 'filtrar' },
             { nombre: 'Editar propuesta (solo pendientes)', valor: 'editar' },
             { separador: true },
-            { nombre: '⭐ Aceptar propuesta (genera proyecto y contrato)', valor: 'aceptar' },
+            { nombre: 'Aceptar propuesta (genera proyecto y contrato)', valor: 'aceptar' },
             { nombre: 'Rechazar propuesta', valor: 'rechazar' },
             { separador: true },
             { nombre: 'Ver estadísticas', valor: 'estadisticas' },
             { nombre: 'Volver al menú principal', valor: 'volver' },
         ])
 
-        try {
+        if (accion === 'volver') return
+
+        await ejecutarAccion(async () => {
             switch (accion) {
                 case 'crear': {
-                    console.log(estilo.titulo('\n--- Nueva propuesta ---'))
+                    encabezado('Nueva propuesta')
                     console.log(AVISO_CANCELAR)
+
                     const cliente = await elegirDeLista(
                         await propuestaService.listarClientesDisponibles(),
                         {
@@ -71,21 +72,25 @@ export async function menuPropuestas(propuestaService) {
                         },
                     )
 
-                    const titulo = await pedirTexto('Título', {
-                        min: 3,
+                    // Antes esta pantalla pedía el título con `min: 3` mientras
+                    // el modelo exigía 5: el usuario escribía 4 caracteres, la
+                    // consola lo aceptaba y el error saltaba después. Al salir
+                    // la pregunta de la regla, ese desajuste ya no puede pasar.
+                    const titulo = await pedirSegunRegla('Título', Propuesta.REGLAS.titulo, {
                         ejemplo: 'Rediseño de la tienda online',
                     })
-                    const descripcion = await pedirTexto('Descripción', { opcional: true })
-                    const monto = await pedirNumero('Monto en quetzales', {
-                        min: 1,
+                    const descripcion = await pedirSegunRegla(
+                        'Descripción',
+                        Propuesta.REGLAS.descripcion,
+                    )
+                    const monto = await pedirSegunRegla('Monto', Propuesta.REGLAS.monto, {
                         ejemplo: '20000',
                     })
-                    const plazoDias = await pedirNumero('Plazo en días', {
-                        min: 1,
-                        max: 3650,
-                        entero: true,
-                        ejemplo: '45',
-                    })
+                    const plazoDias = await pedirSegunRegla(
+                        'Plazo en días',
+                        Propuesta.REGLAS.plazoDias,
+                        { ejemplo: '45' },
+                    )
 
                     const codigo = await propuestaService.crear({
                         clienteId: cliente._id,
@@ -105,13 +110,19 @@ export async function menuPropuestas(propuestaService) {
                     break
 
                 case 'filtrar': {
-                    const estado = await pedirOpcion('Estado a filtrar', ESTADOS)
+                    const estado = await pedirSegunRegla(
+                        'Estado a filtrar',
+                        Propuesta.REGLAS.estado,
+                    )
                     mostrarPropuestas(await propuestaService.listar(estado))
                     break
                 }
 
                 case 'editar': {
-                    console.log(estilo.titulo('\n--- Editar propuesta ---'))
+                    encabezado('Editar propuesta', [
+                        'Pulsa Enter para dejar un campo como está.',
+                        'Solo se editan las pendientes.',
+                    ])
                     console.log(AVISO_CANCELAR)
 
                     const propuesta = await elegirDeLista(
@@ -123,26 +134,22 @@ export async function menuPropuestas(propuestaService) {
                         },
                     )
 
-                    console.log(estilo.tenue('  Pulsa Enter para dejar un campo como está.'))
-
-                    const titulo = await pedirTexto('Título', {
-                        min: 3,
+                    const titulo = await pedirSegunRegla('Título', Propuesta.REGLAS.titulo, {
                         actual: propuesta.titulo,
                     })
-                    const descripcion = await pedirTexto('Descripción', {
-                        opcional: true,
-                        actual: propuesta.descripcion,
-                    })
-                    const monto = await pedirNumero('Monto en quetzales', {
-                        min: 1,
+                    const descripcion = await pedirSegunRegla(
+                        'Descripción',
+                        Propuesta.REGLAS.descripcion,
+                        { actual: propuesta.descripcion },
+                    )
+                    const monto = await pedirSegunRegla('Monto', Propuesta.REGLAS.monto, {
                         actual: propuesta.monto,
                     })
-                    const plazoDias = await pedirNumero('Plazo en días', {
-                        min: 1,
-                        max: 3650,
-                        entero: true,
-                        actual: propuesta.plazoDias,
-                    })
+                    const plazoDias = await pedirSegunRegla(
+                        'Plazo en días',
+                        Propuesta.REGLAS.plazoDias,
+                        { actual: propuesta.plazoDias },
+                    )
 
                     await propuestaService.editar(propuesta._id, {
                         titulo,
@@ -155,14 +162,10 @@ export async function menuPropuestas(propuestaService) {
                 }
 
                 case 'aceptar': {
-                    console.log(estilo.titulo('\n--- Aceptar propuesta ---'))
-                    console.log(
-                        estilo.tenue(
-                            '  Esto creará el proyecto y su contrato dentro de una transacción.',
-                        ),
-                    )
+                    encabezado('Aceptar propuesta', [
+                        'Esto creará el proyecto y su contrato dentro de una transacción.',
+                    ])
 
-                    // SOLO SE OFRECEN LAS PENDIENTES: LAS DEMÁS DARÍAN ERROR.
                     const propuesta = await elegirDeLista(
                         await propuestaService.listarPendientes(),
                         {
@@ -176,16 +179,23 @@ export async function menuPropuestas(propuestaService) {
                         'Ejecutando la transacción en MongoDB...',
                         () => propuestaService.aceptar(propuesta._id),
                     )
+
                     panelTransaccion('Transacción completada · 3 colecciones', [
                         `La propuesta ${estilo.codigo(propuesta.codigo)} quedó ACEPTADA`,
                         `Nació el proyecto ${estilo.codigo(proyecto.codigo)} ${proyecto.nombre}`,
                         `Nació el contrato ${estilo.codigo(proyecto.codigoContrato)} en borrador`,
                     ])
+                    console.log(
+                        estilo.tenue(
+                            '  Sus entregables y su contrato están dentro de Proyectos.\n',
+                        ),
+                    )
                     break
                 }
 
                 case 'rechazar': {
-                    console.log(estilo.titulo('\n--- Rechazar propuesta ---'))
+                    encabezado('Rechazar propuesta')
+                    console.log(AVISO_CANCELAR)
 
                     const propuesta = await elegirDeLista(
                         await propuestaService.listarPendientes(),
@@ -220,16 +230,7 @@ export async function menuPropuestas(propuestaService) {
                     })
                     break
                 }
-
-                case 'volver':
-                    return
             }
-        } catch (error) {
-            if (error instanceof OperacionCancelada) {
-                console.log('\n' + mensaje.aviso('Operación cancelada.'))
-            } else {
-                console.log('\n' + mensaje.error(error.message))
-            }
-        }
+        })
     }
 }

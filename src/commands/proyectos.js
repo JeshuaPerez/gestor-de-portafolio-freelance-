@@ -1,21 +1,36 @@
+import { Proyecto } from '../models/Proyecto.js'
 import {
-    OperacionCancelada,
+    AVISO_CANCELAR,
     confirmar,
     elegirAccion,
     elegirDeLista,
-    pedirFecha,
     pedirNumero,
-    pedirOpcion,
+    pedirSegunRegla,
     pedirTexto,
 } from '../utils/entrada.js'
 import { barraDeAvance, colorEstado, estilo, mensaje } from '../utils/estilo.js'
 import { formatearDinero, formatearFecha } from '../utils/formato.js'
 import { comoFicha, mostrarPanel } from '../utils/panel.js'
 import { mostrarTabla } from '../utils/tabla.js'
+import { ejecutarAccion, encabezado } from './comun.js'
+import { menuContratoDeProyecto } from './contratos.js'
+import { menuEntregablesDeProyecto, mostrarVencidos } from './entregables.js'
 
-const ESTADOS = ['activo', 'finalizado', 'cancelado']
+// PROYECTOS — Y TODO LO QUE VIVE DENTRO DE UN PROYECTO
+//
+// Este es el cambio de estructura que pedía el feedback. El menú principal
+// tenía "Entregables" y "Contratos" al mismo nivel que "Proyectos", como si
+// fueran cosas independientes. No lo son:
+//
+//   · un entregable SIEMPRE pertenece a un proyecto
+//   · un contrato tiene relación 1:1 con su proyecto
+//
+// La prueba de que estaban mal colocados: sus menús empezaban obligando al
+// usuario a elegir un proyecto en CADA acción. Ahora el proyecto se elige una
+// vez, se entra en él, y dentro está todo lo suyo.
+//
+//   Proyectos -> [elegir proyecto] -> Ficha / Entregables / Contrato / Avance...
 
-// UNA LÍNEA POR PROYECTO, PARA LAS LISTAS DE ELEGIR.
 function describirProyecto(p) {
     return `${p.codigo.padEnd(9)} ${p.nombre.padEnd(30)} ${String(p.avance).padStart(3)}%  ${p.estado}`
 }
@@ -37,92 +52,104 @@ function mostrarProyectos(proyectos) {
     })
 }
 
-export async function menuProyectos(proyectoService) {
+function mostrarFicha(p) {
+    mostrarPanel({
+        titulo: ` ${p.codigo} · ${p.nombre} `,
+        lineas: comoFicha([
+            ['Cliente', p.cliente?.nombre ?? estilo.error('(no encontrado)')],
+            ['Estado', colorEstado(p.estado)],
+            ['Avance', barraDeAvance(p.avance)],
+            ['Cómo se calcula', estilo.tenue(p.comoSeCalculaElAvance)],
+            ['Monto', estilo.dinero(formatearDinero(p.monto))],
+            ['Cobrado', estilo.exito(formatearDinero(p.cobrado ?? 0))],
+            ['Gastado', estilo.error(formatearDinero(p.gastado ?? 0))],
+            ['Inicio', formatearFecha(p.fechaInicio)],
+            ['Fin previsto', formatearFecha(p.fechaFinEstimada)],
+            [
+                'Contrato',
+                p.contratoFirmado ? colorEstado('firmado') : estilo.aviso('SIN FIRMAR'),
+            ],
+        ]),
+    })
+}
+
+/**
+ * MENÚ DE UN PROYECTO CONCRETO.
+ *
+ * Recibe solo los tres servicios que necesita, no un objeto con toda la
+ * aplicación: los entregables y el contrato son parte del proyecto, así que
+ * esta pantalla es la dueña legítima de esos tres.
+ */
+async function menuUnProyecto(referencia, { proyectos, entregables, contratos }) {
     while (true) {
-        const accion = await elegirAccion('PROYECTOS', [
-            { nombre: 'Listar proyectos', valor: 'listar' },
-            { nombre: 'Filtrar por estado', valor: 'filtrar' },
-            { nombre: 'Ver ficha de un proyecto', valor: 'ficha' },
-            { nombre: 'Editar proyecto', valor: 'editar' },
-            { separador: true },
-            { nombre: 'Registrar avance', valor: 'avance' },
-            { nombre: 'Finalizar proyecto', valor: 'finalizar' },
-            { nombre: 'Cancelar proyecto', valor: 'cancelar' },
-            { separador: true },
-            { nombre: 'Volver al menú principal', valor: 'volver' },
-        ])
+        // Se relee en cada vuelta: el avance cambia al aprobar un entregable
+        // y el contrato al firmarlo. La cabecera tiene que reflejarlo.
+        const proyecto = await proyectos.verFicha(referencia)
+        const susEntregables = await entregables.listarPorProyecto(proyecto._id)
 
-        try {
+        const accion = await elegirAccion(
+            `${proyecto.codigo} · ${proyecto.nombre}  [${proyecto.estado}]  ${proyecto.avance}%`,
+            [
+                { nombre: 'Ver ficha completa', valor: 'ficha' },
+                { separador: true },
+                {
+                    nombre: `Entregables (${susEntregables.length})`,
+                    valor: 'entregables',
+                },
+                {
+                    nombre: `Contrato${proyecto.contratoFirmado ? ' (firmado)' : ' (sin firmar)'}`,
+                    valor: 'contrato',
+                },
+                { separador: true },
+                { nombre: 'Editar datos del proyecto', valor: 'editar' },
+                { nombre: 'Registrar avance manual', valor: 'avance' },
+                { nombre: 'Finalizar proyecto', valor: 'finalizar' },
+                { nombre: 'Cancelar proyecto', valor: 'cancelar' },
+                { separador: true },
+                { nombre: 'Volver a la lista de proyectos', valor: 'volver' },
+            ],
+        )
+
+        if (accion === 'volver') return
+
+        // Los submenús gestionan sus propios errores, así que van fuera del wrapper.
+        if (accion === 'entregables') {
+            await menuEntregablesDeProyecto(proyecto, entregables)
+            continue
+        }
+        if (accion === 'contrato') {
+            await menuContratoDeProyecto(proyecto, contratos)
+            continue
+        }
+
+        const salioBien = await ejecutarAccion(async () => {
             switch (accion) {
-                case 'listar':
-                    mostrarProyectos(await proyectoService.listar())
+                case 'ficha':
+                    mostrarFicha(proyecto)
                     break
-
-                case 'filtrar': {
-                    const estado = await pedirOpcion('Estado a filtrar', ESTADOS)
-                    mostrarProyectos(await proyectoService.listar(estado))
-                    break
-                }
-
-                case 'ficha': {
-                    const elegido = await elegirDeLista(await proyectoService.listar(), {
-                        etiqueta: 'Elige el proyecto',
-                        describir: describirProyecto,
-                        siVacio: 'Todavía no hay proyectos. Acepta una propuesta primero.',
-                    })
-
-                    const p = await proyectoService.verFicha(elegido._id)
-
-                    mostrarPanel({
-                        titulo: ` ${p.codigo} · ${p.nombre} `,
-                        lineas: comoFicha([
-                            ['Cliente', p.cliente?.nombre ?? estilo.error('(no encontrado)')],
-                            ['Estado', colorEstado(p.estado)],
-                            ['Avance', barraDeAvance(p.avance)],
-                            ['Monto', estilo.dinero(formatearDinero(p.monto))],
-                            ['Cobrado', estilo.exito(formatearDinero(p.cobrado ?? 0))],
-                            ['Gastado', estilo.error(formatearDinero(p.gastado ?? 0))],
-                            ['Inicio', formatearFecha(p.fechaInicio)],
-                            ['Fin previsto', formatearFecha(p.fechaFinEstimada)],
-                            [
-                                'Contrato',
-                                p.contratoFirmado
-                                    ? colorEstado('firmado')
-                                    : estilo.aviso('SIN FIRMAR'),
-                            ],
-                        ]),
-                    })
-                    break
-                }
 
                 case 'editar': {
-                    console.log(estilo.titulo('\n--- Editar proyecto ---'))
-                    console.log(
-                        estilo.tenue(
-                            '  El monto no se edita aquí: viene del contrato firmado.\n' +
-                                '  El avance tampoco: para eso está "Registrar avance".',
-                        ),
-                    )
+                    encabezado('Editar proyecto', [
+                        'El monto no se edita aquí: viene del contrato.',
+                        'El avance tampoco: para eso está "Registrar avance".',
+                    ])
+                    console.log(AVISO_CANCELAR)
 
-                    const proyecto = await elegirDeLista(await proyectoService.listarActivos(), {
-                        etiqueta: 'Elige el proyecto a editar',
-                        describir: describirProyecto,
-                        siVacio: 'No hay proyectos activos.',
-                    })
-
-                    const nombre = await pedirTexto('Nombre', {
-                        min: 5,
+                    const nombre = await pedirSegunRegla('Nombre', Proyecto.REGLAS.nombre, {
                         actual: proyecto.nombre,
                     })
-                    const descripcion = await pedirTexto('Descripción', {
-                        opcional: true,
-                        actual: proyecto.descripcion,
-                    })
-                    const fechaFinEstimada = await pedirFecha('Fin previsto', {
-                        actual: new Date(proyecto.fechaFinEstimada).toISOString().slice(0, 10),
-                    })
+                    const descripcion = await pedirSegunRegla(
+                        'Descripción',
+                        Proyecto.REGLAS.descripcion,
+                        { actual: proyecto.descripcion },
+                    )
+                    const fechaFinEstimada = await pedirSegunRegla(
+                        'Fin previsto',
+                        Proyecto.REGLAS.fechaFinEstimada,
+                        { actual: new Date(proyecto.fechaFinEstimada).toISOString().slice(0, 10) },
+                    )
 
-                    const p = await proyectoService.editar(proyecto._id, {
+                    const p = await proyectos.editar(proyecto._id, {
                         nombre,
                         descripcion,
                         fechaFinEstimada,
@@ -132,51 +159,49 @@ export async function menuProyectos(proyectoService) {
                 }
 
                 case 'avance': {
-                    console.log(estilo.titulo('\n--- Registrar avance ---'))
-                    console.log(
-                        estilo.tenue('  (Si el proyecto tiene entregables, el avance se calcula solo)'),
-                    )
+                    encabezado('Registrar avance', [
+                        proyecto.comoSeCalculaElAvance,
+                        'El avance no puede retroceder.',
+                    ])
 
-                    const proyecto = await elegirDeLista(await proyectoService.listarActivos(), {
-                        etiqueta: 'Elige el proyecto',
-                        describir: describirProyecto,
-                        siVacio: 'No hay proyectos activos.',
-                    })
-
+                    // Ojo: aquí ya NO se le pone `min: proyecto.avance` a la
+                    // pregunta. Esa regla es del negocio y la valida la
+                    // estrategia AvanceManual; la consola no la repite.
                     const porcentaje = await pedirNumero('Nuevo avance', {
-                        min: proyecto.avance,
+                        min: 0,
                         max: 100,
                         entero: true,
                         ejemplo: '50',
                     })
 
-                    const p = await proyectoService.registrarAvance(proyecto._id, porcentaje)
-                    console.log('\n' + mensaje.exito('Avance actualizado:') + ` ${barraDeAvance(p.avance)}`)
+                    const p = await proyectos.registrarAvance(proyecto._id, porcentaje)
+                    console.log(
+                        '\n' + mensaje.exito('Avance actualizado:') + ` ${barraDeAvance(p.avance)}`,
+                    )
                     break
                 }
 
                 case 'finalizar': {
-                    console.log(estilo.titulo('\n--- Finalizar proyecto ---'))
+                    encabezado('Finalizar proyecto', [
+                        'Solo se finaliza un proyecto que esté al 100%.',
+                    ])
 
-                    const proyecto = await elegirDeLista(await proyectoService.listarActivos(), {
-                        etiqueta: 'Elige el proyecto a finalizar',
-                        describir: describirProyecto,
-                        siVacio: 'No hay proyectos activos.',
-                    })
+                    const seguro = await confirmar(
+                        `¿Finalizar ${proyecto.codigo} "${proyecto.nombre}"?`,
+                    )
+                    if (!seguro) {
+                        console.log('\n' + mensaje.aviso('Operación cancelada.'))
+                        break
+                    }
 
-                    const p = await proyectoService.finalizar(proyecto._id)
+                    const p = await proyectos.finalizar(proyecto._id)
                     console.log('\n' + mensaje.exito(`Proyecto ${p.codigo} finalizado.`))
                     break
                 }
 
                 case 'cancelar': {
-                    console.log(estilo.titulo('\n--- Cancelar proyecto ---'))
-
-                    const proyecto = await elegirDeLista(await proyectoService.listarActivos(), {
-                        etiqueta: 'Elige el proyecto a cancelar',
-                        describir: describirProyecto,
-                        siVacio: 'No hay proyectos activos.',
-                    })
+                    encabezado('Cancelar proyecto')
+                    console.log(AVISO_CANCELAR)
 
                     const motivo = await pedirTexto('Motivo de la cancelación', {
                         min: 5,
@@ -191,20 +216,64 @@ export async function menuProyectos(proyectoService) {
                         break
                     }
 
-                    const p = await proyectoService.cancelar(proyecto._id, motivo)
+                    const p = await proyectos.cancelar(proyecto._id, motivo)
                     console.log('\n' + mensaje.exito(`Proyecto ${p.codigo} cancelado.`))
                     break
                 }
+            }
+        })
 
-                case 'volver':
-                    return
+        // Si el proyecto se cerró, no tiene sentido seguir dentro de él.
+        if (salioBien && (accion === 'finalizar' || accion === 'cancelar')) return
+    }
+}
+
+/** MENÚ PRINCIPAL DE PROYECTOS. */
+export async function menuProyectos(servicios) {
+    const { proyectos, entregables } = servicios
+
+    while (true) {
+        const accion = await elegirAccion('PROYECTOS', [
+            { nombre: 'Abrir un proyecto', valor: 'abrir' },
+            { separador: true },
+            { nombre: 'Listar todos', valor: 'listar' },
+            { nombre: 'Filtrar por estado', valor: 'filtrar' },
+            { nombre: 'Entregables vencidos (todos los proyectos)', valor: 'vencidos' },
+            { separador: true },
+            { nombre: 'Volver al menú principal', valor: 'volver' },
+        ])
+
+        if (accion === 'volver') return
+
+        await ejecutarAccion(async () => {
+            switch (accion) {
+                case 'abrir': {
+                    const elegido = await elegirDeLista(await proyectos.listar(), {
+                        etiqueta: 'Elige el proyecto',
+                        describir: describirProyecto,
+                        siVacio: 'Todavía no hay proyectos. Acepta una propuesta primero.',
+                    })
+                    await menuUnProyecto(elegido._id, servicios)
+                    break
+                }
+
+                case 'listar':
+                    mostrarProyectos(await proyectos.listar())
+                    break
+
+                case 'filtrar': {
+                    const estado = await pedirSegunRegla(
+                        'Estado a filtrar',
+                        Proyecto.REGLAS.estado,
+                    )
+                    mostrarProyectos(await proyectos.listar(estado))
+                    break
+                }
+
+                case 'vencidos':
+                    await mostrarVencidos(entregables)
+                    break
             }
-        } catch (error) {
-            if (error instanceof OperacionCancelada) {
-                console.log('\n' + mensaje.aviso('Operación cancelada.'))
-            } else {
-                console.log('\n' + mensaje.error(error.message))
-            }
-        }
+        })
     }
 }

@@ -1,120 +1,152 @@
-import {
-    AVISO_CANCELAR,
-    OperacionCancelada,
-    confirmar,
-    elegirAccion,
-    elegirDeLista,
-    pedirNumero,
-    pedirTexto,
-} from '../utils/entrada.js'
+import { Contrato } from '../models/Contrato.js'
+import { AVISO_CANCELAR, confirmar, elegirAccion, pedirSegunRegla } from '../utils/entrada.js'
 import { conSpinner } from '../utils/espera.js'
 import { colorEstado, estilo, mensaje } from '../utils/estilo.js'
 import { formatearDinero, formatearFecha } from '../utils/formato.js'
-import { mostrarPanel, panelTransaccion } from '../utils/panel.js'
-import { mostrarTabla } from '../utils/tabla.js'
+import { comoFicha, mostrarPanel, panelTransaccion } from '../utils/panel.js'
+import { ejecutarAccion, encabezado } from './comun.js'
 
-// UNA LINEA POR CONTRATO, PARA LAS LISTAS DE ELEGIR.
-function describirContrato(c) {
-    return `${c.codigo.padEnd(9)} ${formatearDinero(c.valor).padEnd(16)} ${c.estado}`
+// CONTRATO DE UN PROYECTO
+//
+// Igual que los entregables, esto tampoco es un módulo del menú principal.
+// La relación proyecto-contrato es 1:1: no tiene sentido "buscar un contrato"
+// como si viviera por su cuenta. Se entra por el proyecto.
+
+/**
+ * Maqueta el documento del contrato.
+ *
+ * Este texto lo construía ContratoService. Pero maquetar es presentación:
+ * obligaba a la capa de negocio a importar utils/formato.js. Ahora el
+ * servicio devuelve los datos y el dibujo se hace aquí.
+ */
+function maquetarDocumento({ contrato, cliente, proyecto }) {
+    return [
+        '='.repeat(64),
+        `  CONTRATO DE PRESTACIÓN DE SERVICIOS  ·  ${contrato.codigo}`,
+        '='.repeat(64),
+        '',
+        `  CLIENTE:   ${cliente?.nombre ?? '(no encontrado)'}`,
+        `  EMPRESA:   ${cliente?.empresa ?? '-'}`,
+        `  PROYECTO:  ${proyecto?.nombre ?? '(no encontrado)'}`,
+        '',
+        `  VALOR:     ${formatearDinero(contrato.valor)}`,
+        `  PAGO:      ${contrato.formaPago}`,
+        `  VIGENCIA:  ${formatearFecha(contrato.fechaInicio)} al ${formatearFecha(contrato.fechaFin)}`,
+        '',
+        '  CONDICIONES:',
+        `  ${contrato.condiciones}`,
+        '',
+        `  ESTADO:    ${contrato.estado.toUpperCase()}`,
+        `  FIRMADO:   ${contrato.firmadoEn ? formatearFecha(contrato.firmadoEn) : 'SIN FIRMAR'}`,
+        '='.repeat(64),
+    ].join('\n')
 }
 
-// UNA LINEA POR PROYECTO, PARA LA LISTA DE ELEGIR.
-function describirProyecto(p) {
-    return `${p.codigo.padEnd(9)} ${p.nombre.padEnd(30)} ${p.estado}`
-}
-
-function mostrarContratos(contratos) {
-    mostrarTabla({
-        cabeceras: ['Código', 'Valor', 'Forma de pago', 'Vigencia', 'Firmado', 'Estado'],
-        filas: contratos.map((c) => [
-            estilo.codigo(c.codigo),
-            estilo.dinero(formatearDinero(c.valor)),
-            c.formaPago,
-            `${formatearFecha(c.fechaInicio)}\n${formatearFecha(c.fechaFin)}`,
-            c.firmadoEn ? formatearFecha(c.firmadoEn) : estilo.tenue('sin firmar'),
-            colorEstado(c.estado),
+function mostrarFicha(contrato) {
+    mostrarPanel({
+        titulo: ` ${contrato.codigo} · Contrato `,
+        lineas: comoFicha([
+            ['Estado', colorEstado(contrato.estado)],
+            ['Valor', estilo.dinero(formatearDinero(contrato.valor))],
+            ['Forma de pago', contrato.formaPago],
+            ['Inicio', formatearFecha(contrato.fechaInicio)],
+            ['Fin', formatearFecha(contrato.fechaFin)],
+            [
+                'Firmado',
+                contrato.firmadoEn
+                    ? estilo.exito(formatearFecha(contrato.firmadoEn))
+                    : estilo.aviso('SIN FIRMAR'),
+            ],
+            ['Condiciones', contrato.condiciones],
         ]),
-        alineado: ['left', 'right', 'left', 'left', 'left', 'left'],
-        vacio: 'No hay contratos para mostrar.',
-        resumen: `Total: ${contratos.length} contrato(s)`,
     })
 }
 
-export async function menuContratos(contratoService) {
+/**
+ * MENÚ DEL CONTRATO DE UN PROYECTO.
+ *
+ * @param {object} proyecto         el proyecto ya elegido
+ * @param {object} contratoService  su único servicio
+ */
+export async function menuContratoDeProyecto(proyecto, contratoService) {
     while (true) {
-        const accion = await elegirAccion('CONTRATOS', [
-            { nombre: 'Listar contratos', valor: 'listar' },
-            { nombre: 'Ver el contrato de un proyecto', valor: 'porProyecto' },
-            { separador: true },
-            { nombre: 'Editar contrato (solo borradores)', valor: 'editar' },
-            { nombre: '⭐ Firmar contrato', valor: 'firmar' },
-            { separador: true },
-            { nombre: 'Imprimir documento del contrato', valor: 'imprimir' },
-            { nombre: 'Volver al menú principal', valor: 'volver' },
-        ])
-
+        let contrato = null
         try {
+            contrato = await contratoService.verPorProyecto(proyecto._id)
+        } catch {
+            console.log('\n' + mensaje.aviso('Este proyecto todavía no tiene contrato.'))
+            return
+        }
+
+        const accion = await elegirAccion(
+            `CONTRATO · ${contrato.codigo} (${contrato.estado})`,
+            [
+                { nombre: 'Ver ficha del contrato', valor: 'ficha' },
+                { nombre: 'Ver documento imprimible', valor: 'documento' },
+                { separador: true },
+                { nombre: 'Editar condiciones (solo borrador)', valor: 'editar' },
+                { nombre: 'Firmar contrato', valor: 'firmar' },
+                { separador: true },
+                { nombre: 'Volver al proyecto', valor: 'volver' },
+            ],
+        )
+
+        if (accion === 'volver') return
+
+        await ejecutarAccion(async () => {
             switch (accion) {
-                case 'listar':
-                    mostrarContratos(await contratoService.listar())
+                case 'ficha':
+                    mostrarFicha(contrato)
                     break
 
-                case 'porProyecto': {
-                    const proyecto = await elegirDeLista(await contratoService.listarProyectos(), {
-                        etiqueta: 'Elige el proyecto',
-                        describir: describirProyecto,
-                        siVacio: 'Todavía no hay proyectos.',
-                    })
-                    mostrarContratos([await contratoService.verPorProyecto(proyecto._id)])
+                case 'documento':
+                    console.log('')
+                    console.log(
+                        maquetarDocumento(
+                            await contratoService.datosParaDocumento(contrato._id),
+                        ),
+                    )
+                    console.log('')
                     break
-                }
 
                 case 'editar': {
-                    console.log(estilo.titulo('\n--- Editar condiciones ---'))
+                    encabezado('Editar contrato', [
+                        'Solo se edita mientras esté en borrador.',
+                        'Un contrato firmado ya no se toca.',
+                    ])
                     console.log(AVISO_CANCELAR)
 
-                    const contrato = await elegirDeLista(await contratoService.listarBorradores(), {
-                        etiqueta: 'Elige el contrato a editar',
-                        describir: describirContrato,
-                        siVacio: 'No hay contratos en borrador. Los firmados ya no se editan.',
-                    })
-
-                    console.log(
-                        estilo.tenue('  Cada campo trae su valor actual: Enter lo deja igual.'),
+                    const condiciones = await pedirSegunRegla(
+                        'Condiciones',
+                        Contrato.REGLAS.condiciones,
+                        { actual: contrato.condiciones },
                     )
-
-                    const condiciones = await pedirTexto('Condiciones', {
-                        min: 10,
-                        actual: contrato.condiciones,
-                    })
-                    const formaPago = await pedirTexto('Forma de pago', {
-                        actual: contrato.formaPago,
-                    })
-                    const valor = await pedirNumero('Valor en quetzales', {
-                        min: 1,
+                    const formaPago = await pedirSegunRegla(
+                        'Forma de pago',
+                        Contrato.REGLAS.formaPago,
+                        { actual: contrato.formaPago, ejemplo: '50% anticipo, 50% al entregar' },
+                    )
+                    const valor = await pedirSegunRegla('Valor', Contrato.REGLAS.valor, {
                         actual: contrato.valor,
                     })
 
-                    await contratoService.editar(contrato._id, { condiciones, formaPago, valor })
-                    console.log('\n' + mensaje.exito(`Contrato ${contrato.codigo} actualizado.`))
+                    const c = await contratoService.editar(contrato._id, {
+                        condiciones,
+                        formaPago,
+                        valor,
+                    })
+                    console.log('\n' + mensaje.exito(`Contrato ${c.codigo} actualizado.`))
                     break
                 }
 
                 case 'firmar': {
-                    console.log(estilo.titulo('\n--- Firmar contrato ---'))
-                    console.log(
-                        estilo.tenue(
-                            '  Activa el contrato y sincroniza el proyecto, en una transacción.',
-                        ),
-                    )
+                    encabezado('Firmar contrato', [
+                        'Firmar activa el contrato y lo marca en el proyecto, en una transacción.',
+                        'Hace falta haber redactado las condiciones.',
+                    ])
 
-                    const contrato = await elegirDeLista(await contratoService.listarBorradores(), {
-                        etiqueta: 'Elige el contrato a firmar',
-                        describir: describirContrato,
-                        siVacio: 'No hay contratos en borrador pendientes de firma.',
-                    })
+                    mostrarFicha(contrato)
 
-                    // Firmar es irreversible: se confirma antes.
                     const seguro = await confirmar(
                         `¿Firmar el contrato ${contrato.codigo} por ${formatearDinero(contrato.valor)}?`,
                     )
@@ -123,39 +155,17 @@ export async function menuContratos(contratoService) {
                         break
                     }
 
-                    const c = await conSpinner('Firmando dentro de una transacción...', () =>
+                    const c = await conSpinner('Firmando y sincronizando el proyecto...', () =>
                         contratoService.firmar(contrato._id),
                     )
+
                     panelTransaccion('Transacción completada · 2 colecciones', [
-                        `El contrato ${estilo.codigo(c.codigo)} quedó ACTIVO`,
-                        'El proyecto quedó marcado como formalizado',
+                        `Contrato ${c.codigo} pasó a ${colorEstado('activo')}`,
+                        `Proyecto ${proyecto.codigo} marcado como CON CONTRATO FIRMADO`,
                     ])
                     break
                 }
-
-                case 'imprimir': {
-                    const contrato = await elegirDeLista(await contratoService.listar(), {
-                        etiqueta: 'Elige el contrato a imprimir',
-                        describir: describirContrato,
-                        siVacio: 'Todavía no hay contratos.',
-                    })
-
-                    mostrarPanel({
-                        titulo: ` Contrato ${contrato.codigo} `,
-                        lineas: (await contratoService.generarDocumento(contrato._id)).split('\n'),
-                    })
-                    break
-                }
-
-                case 'volver':
-                    return
             }
-        } catch (error) {
-            if (error instanceof OperacionCancelada) {
-                console.log('\n' + mensaje.aviso('Operación cancelada.'))
-            } else {
-                console.log('\n' + mensaje.error(error.message))
-            }
-        }
+        })
     }
 }

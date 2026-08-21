@@ -2,6 +2,10 @@ import dayjs from 'dayjs'
 import 'dayjs/locale/es.js'
 import relativeTime from 'dayjs/plugin/relativeTime.js'
 
+// Estas tres son del DOMINIO, no de la presentacion: viven en /dominio y
+// aqui solo se reexportan para que la consola las siga importando de un sitio.
+export { aFechaLocal, finDelDiaLocal, redondearDinero } from '../dominio/valores.js'
+
 dayjs.extend(relativeTime)
 dayjs.locale('es')
 
@@ -26,26 +30,8 @@ export function formatearDinero(monto) {
     return obtenerFormateadorDinero().format(monto ?? 0)
 }
 
-export function aFechaLocal(valor) {
-    if (valor instanceof Date) return valor
-    if (typeof valor !== 'string') return new Date(valor)
 
-    const partes = valor.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/)
-    if (!partes) return new Date(valor) // no tiene la forma esperada: que lo intente Date
 
-    const [, anio, mes, dia] = partes
-    return new Date(Number(anio), Number(mes) - 1, Number(dia))
-}
-
-export function finDelDiaLocal(valor) {
-    const fecha = aFechaLocal(valor)
-    fecha.setHours(23, 59, 59, 999)
-    return fecha
-}
-
-export function redondearDinero(monto) {
-    return Math.round((Number(monto) + Number.EPSILON) * 100) / 100
-}
 
 export function formatearFecha(fecha) {
     if (!fecha) return '-'

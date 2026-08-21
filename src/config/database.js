@@ -1,28 +1,71 @@
-import { MongoClient } from 'mongodb'
 import 'dotenv/config'
+import { MongoClient } from 'mongodb'
 
-
-//  PATRÓN SINGLETON
-
+// PATRÓN SINGLETON (GoF)
+//
+// La versión anterior tenía esto en el constructor:
+//
+//     if (Database.instancia) return Database.instancia
+//
+// ...pero la clase nunca se exportaba, así que nadie podía llamar a `new`
+// y esa línea no se ejecutaba jamás. Era código muerto: lo que había de
+// verdad era un módulo con una instancia, no el patrón.
+//
+// Este sí es el patrón: el constructor está cerrado y la ÚNICA forma de
+// obtener la instancia es `Database.obtenerInstancia()`. Si alguien intenta
+// `new Database()`, revienta con un mensaje que le dice qué hacer.
 class Database {
-    static instancia = null
+    static #instancia = null
+    static #construccionAutorizada = false
 
     constructor() {
-        // Si ya existe una instancia, devolvemos esa en vez de crear otra.
-        if (Database.instancia) return Database.instancia
+        if (!Database.#construccionAutorizada) {
+            throw new Error(
+                'Database es un Singleton: no se instancia con new. ' +
+                    'Usa Database.obtenerInstancia().',
+            )
+        }
 
-        this.client = new MongoClient(process.env.MONGODB_URI)
+        this.client = null
         this.db = null
-        Database.instancia = this
+        this.nombre = null
     }
 
-    //ABRE LA CONEXIÓN. SOLO HACE FALTA LLAMARLO UNA VEZ, AL ARRANCAR.
-    async conectar() {
-        if (this.db) return this.db 
+    /** El único punto de acceso a la instancia. */
+    static obtenerInstancia() {
+        if (!Database.#instancia) {
+            Database.#construccionAutorizada = true
+            Database.#instancia = new Database()
+            Database.#construccionAutorizada = false
+        }
+        return Database.#instancia
+    }
 
-        await this.client.connect()
+    /**
+     * Abre la conexión. Es idempotente: llamarla dos veces no abre dos clientes.
+     *
+     * Por qué importa que haya UNA sola conexión: una transacción vive dentro
+     * de una sesión, y una sesión pertenece a un cliente. Con varios clientes
+     * los repositorios no podrían compartir la misma transacción.
+     */
+    async conectar() {
+        if (this.db) return this.db
+
+        const uri = process.env.MONGODB_URI
+        if (!uri) {
+            throw new Error(
+                'Falta MONGODB_URI. Copia .env.example a .env y pon ahí tu cadena de conexión.',
+            )
+        }
 
         const nombreBd = process.env.MONGODB_DB_V2 ?? process.env.MONGODB_DB
+        if (!nombreBd) {
+            throw new Error('Falta MONGODB_DB en el archivo .env: no sé a qué base conectarme.')
+        }
+
+        this.client = new MongoClient(uri)
+        await this.client.connect()
+
         this.db = this.client.db(nombreBd)
         this.nombre = nombreBd
 
@@ -34,9 +77,14 @@ class Database {
     }
 
     async cerrar() {
+        if (!this.client) return
         await this.client.close()
+        this.client = null
+        this.db = null
     }
 }
 
-// EXPORTAMOS LA INSTANCIA YA CREADA: TODO EL PROYECTO IMPORTA ESTE MISMO OBJETO.
-export const database = new Database()
+export { Database }
+
+// La instancia compartida por toda la aplicación.
+export const database = Database.obtenerInstancia()

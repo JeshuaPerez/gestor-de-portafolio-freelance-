@@ -1,39 +1,71 @@
+import { aFechaLocal } from '../dominio/valores.js'
+import { NoEncontradoError, ReglaNegocioError } from '../errors/errores.js'
+import { EVENTOS } from '../eventos/EmisorEventos.js'
 import { Entregable } from '../models/Entregable.js'
-import { aFechaLocal } from '../utils/formato.js'
 
 // REGLAS DE NEGOCIO PARA ENTREGABLES
+//
+// Lo que cambió respecto a la versión anterior:
+//
+//  · ya no recibe `mongoClient`, sino una UnidadDeTrabajo (abstracción) -> DIP
+//  · ya no decide qué transiciones son legales: se lo pregunta al estado -> State
+//  · ya no recalcula el avance del proyecto: anuncia el evento           -> Observer
+//  · editar() reconstruye el modelo y llama a validar(), igual que crear()
 export class EntregableService {
-    constructor(entregableRepositorio, proyectoRepositorio, mongoClient) {
+    constructor(entregableRepositorio, proyectoRepositorio, unidadDeTrabajo, emisor) {
         this.entregables = entregableRepositorio
         this.proyectos = proyectoRepositorio
-        this.mongoClient = mongoClient
+        this.unidadDeTrabajo = unidadDeTrabajo
+        this.emisor = emisor
     }
 
-    // REGLA: FECHA LÍMITE no puede ser posterior al fin del proyecto
+    async #exigirProyecto(referencia, contexto) {
+        const proyecto = await this.proyectos.buscarPorIdOCodigo(referencia, contexto)
+        if (!proyecto) throw new NoEncontradoError('proyecto', referencia)
+        return proyecto
+    }
+
+    async #exigirEntregable(referencia, contexto) {
+        const entregable = await this.entregables.buscarPorIdOCodigo(referencia, contexto)
+        if (!entregable) throw new NoEncontradoError('entregable', referencia)
+        return entregable
+    }
+
+    // CREAR — el proyecto tiene que estar activo y la fecha caber dentro de él.
     async crear(datos) {
-        const proyecto = await this.proyectos.buscarPorIdOCodigo(datos.proyectoId)
-        if (!proyecto) {
-            throw new Error(`No existe ningún proyecto con la referencia "${datos.proyectoId}".`)
-        }
-        if (proyecto.estado !== 'activo') {
-            throw new Error(`El proyecto está ${proyecto.estado}: no admite entregables nuevos.`)
-        }
+        return this.unidadDeTrabajo.ejecutar(async (contexto) => {
+            const proyecto = await this.#exigirProyecto(datos.proyectoId, contexto)
 
-        const entregable = new Entregable({ ...datos, proyectoId: proyecto._id })
-        entregable.validar()
+            if (proyecto.estado !== 'activo') {
+                throw new ReglaNegocioError(
+                    `El proyecto está ${proyecto.estado}: no admite entregables nuevos.`,
+                )
+            }
 
-        if (entregable.fechaLimite > new Date(proyecto.fechaFinEstimada)) {
-            throw new Error('La fecha límite no puede ser posterior al fin del proyecto.')
-        }
+            const entregable = new Entregable({ ...datos, proyectoId: proyecto._id })
+            entregable.validar()
 
-        entregable.codigo = await this.entregables.siguienteCodigo('ENT')
-        await this.entregables.crear(entregable.aDocumento())
-        return entregable.codigo
+            if (entregable.fechaLimite > new Date(proyecto.fechaFinEstimada)) {
+                throw new ReglaNegocioError(
+                    'La fecha límite no puede ser posterior al fin del proyecto.',
+                )
+            }
+
+            entregable.codigo = await this.entregables.siguienteCodigo('ENT', contexto)
+            await this.entregables.crear(entregable.aDocumento(), contexto)
+
+            // El avance lo recalcula quien escuche esto, no nosotros.
+            await this.emisor.emitir(EVENTOS.ENTREGABLE_CREADO, {
+                proyectoId: proyecto._id,
+                contexto,
+            })
+
+            return entregable.codigo
+        })
     }
 
     async listarPorProyecto(referencia) {
-        const proyecto = await this.proyectos.buscarPorIdOCodigo(referencia)
-        if (!proyecto) throw new Error(`No existe ningún proyecto con la referencia "${referencia}".`)
+        const proyecto = await this.#exigirProyecto(referencia)
         return this.entregables.listarPorProyecto(proyecto._id)
     }
 
@@ -41,218 +73,134 @@ export class EntregableService {
         return this.entregables.listarVencidos()
     }
 
-    // Proyectos activos: los únicos que admiten entregables nuevos.
     async listarProyectosActivos() {
         return this.proyectos.listarPorEstado('activo')
     }
 
-    // Todos los proyectos, para consultar entregables de cualquiera.
     async listarProyectos() {
         return this.proyectos.listar()
     }
 
-    // CALCULAR AVANCE: porcentaje de peso aprobado sobre el total de peso. Si no hay entregables, devuelve 0.
-    calcularAvance(entregables) {
-        const pesoTotal = entregables.reduce((suma, e) => suma + e.peso, 0)
-        if (pesoTotal === 0) return 0 // sin entregables no hay nada que calcular
-
-        const pesoAprobado = entregables
-            .filter((e) => e.estado === 'aprobado')
-            .reduce((suma, e) => suma + e.peso, 0)
-
-        return Math.round((pesoAprobado / pesoTotal) * 100)
+    /** Los estados a los que este entregable puede saltar ahora mismo. */
+    transicionesPosibles(entregable) {
+        return Entregable.desdeDocumento(entregable).estadoActual().siguientes()
     }
 
-    // CAMBIAR ESTADO — transaccional: cambia el estado, anota el historial y recalcula el avance del proyecto.
-    async cambiarEstado(referencia, estadoNuevo, motivo) {
-        const session = this.mongoClient.startSession()
+    // CAMBIAR ESTADO — atómico: estado + historial + (por evento) avance.
+    async cambiarEstado(referencia, claveNueva, motivo) {
+        return this.unidadDeTrabajo.ejecutar(async (contexto) => {
+            const documento = await this.#exigirEntregable(referencia, contexto)
+            const entregable = Entregable.desdeDocumento(documento)
 
-        try {
-            let resultado = null
+            // El estado decide si la transición es legal y si exige motivo.
+            // Si no lo es, lanza él mismo el error explicando qué se puede hacer.
+            const estadoDestino = entregable.estadoActual().transicionarA(claveNueva, motivo)
 
-            await session.withTransaction(async () => {
-                const entregable = await this.entregables.buscarPorIdOCodigo(referencia, session)
-                if (!entregable) {
-                    throw new Error(`No existe ningún entregable con la referencia "${referencia}".`)
-                }
+            const entrada = entregable.anotarCambio(entregable.estado, estadoDestino.clave, motivo)
 
-                if (!Entregable.puedeCambiar(entregable.estado, estadoNuevo)) {
-                    const posibles = Entregable.TRANSICIONES[entregable.estado]
-                    throw new Error(
-                        `No se puede pasar de "${entregable.estado}" a "${estadoNuevo}". ` +
-                            (posibles.length
-                                ? `Desde "${entregable.estado}" solo se puede ir a: ${posibles.join(', ')}.`
-                                : `"${entregable.estado}" es un estado final.`),
-                    )
-                }
+            await this.entregables.actualizar(
+                documento._id,
+                { estado: estadoDestino.clave, actualizadoEn: new Date() },
+                contexto,
+            )
+            await this.entregables.agregarAlHistorial(documento._id, entrada, contexto)
 
-                // REGLA: rechazar exige explicar por qué.
-                if (estadoNuevo === 'rechazado' && (!motivo || motivo.trim().length < 5)) {
-                    throw new Error('Debes indicar el motivo del rechazo (mínimo 5 caracteres).')
-                }
-
-                // PASO 1: cambiar el estado y anotar el historial ---
-                await this.entregables.actualizar(
-                    entregable._id,
-                    { estado: estadoNuevo, actualizadoEn: new Date() },
-                    session,
-                )
-                await this.entregables.agregarAlHistorial(
-                    entregable._id,
-                    {
-                        desde: entregable.estado,
-                        hasta: estadoNuevo,
-                        motivo: motivo?.trim() || null,
-                        fecha: new Date(),
-                    },
-                    session,
-                )
-
-                // PASO 2: recalcular el avance del proyecto ---
-                const hermanos = await this.entregables.listarPorProyecto(
-                    entregable.proyectoId,
-                    session,
-                )
-                const avance = this.calcularAvance(hermanos)
-
-                await this.proyectos.actualizar(
-                    String(entregable.proyectoId),
-                    { avance, actualizadoEn: new Date() },
-                    session,
-                )
-
-                resultado = {
-                    codigo: entregable.codigo,
-                    titulo: entregable.titulo,
-                    estadoNuevo,
-                    avance,
-                }
+            await this.emisor.emitir(EVENTOS.ENTREGABLE_CAMBIO_ESTADO, {
+                proyectoId: documento.proyectoId,
+                contexto,
             })
 
-            return resultado
-        } finally {
-            await session.endSession()
-        }
+            // Releemos el proyecto para devolver el avance ya sincronizado.
+            const proyecto = await this.proyectos.buscarPorId(
+                String(documento.proyectoId),
+                contexto,
+            )
+
+            return {
+                codigo: documento.codigo,
+                titulo: documento.titulo,
+                estadoNuevo: estadoDestino.clave,
+                avance: proyecto?.avance ?? 0,
+            }
+        })
     }
 
-    // EDITAR — transaccional: valida todo el modelo, actualiza y recalcula el avance del proyecto.
+    // EDITAR — reconstruye el modelo y lo valida ENTERO, igual que al crear.
     async editar(referencia, cambios) {
-        const session = this.mongoClient.startSession()
+        return this.unidadDeTrabajo.ejecutar(async (contexto) => {
+            const documento = await this.#exigirEntregable(referencia, contexto)
+            const actual = Entregable.desdeDocumento(documento)
 
-        try {
-            let resultado = null
-
-            await session.withTransaction(async () => {
-                const entregable = await this.entregables.buscarPorIdOCodigo(referencia, session)
-                if (!entregable) {
-                    throw new Error(`No existe ningún entregable con la referencia "${referencia}".`)
-                }
-
-                if (!['pendiente', 'rechazado'].includes(entregable.estado)) {
-                    throw new Error(
-                        `"${entregable.titulo}" está ${entregable.estado}: ya no se puede editar. ` +
-                            'Solo se editan los pendientes o rechazados.',
-                    )
-                }
-
-                const proyecto = await this.proyectos.buscarPorId(
-                    String(entregable.proyectoId),
-                    session,
+            // ¿Se puede tocar? Lo dice el estado, no una lista escrita aquí.
+            if (!actual.estadoActual().permiteEdicion()) {
+                throw new ReglaNegocioError(
+                    `"${documento.titulo}" está ${documento.estado}: ya no se puede editar. ` +
+                        'Solo se editan los pendientes o rechazados.',
                 )
+            }
 
-                const titulo = cambios.titulo ?? entregable.titulo
-                if (!titulo || titulo.trim().length < 3) {
-                    throw new Error('El título del entregable es obligatorio (mínimo 3 caracteres).')
-                }
+            // AQUÍ está el arreglo del agujero que había: antes la edición
+            // comprobaba a mano el título y el peso, y se saltaba el resto de
+            // las reglas del modelo. Ahora pasa por el mismo validar().
+            const editado = Entregable.desdeDocumento(documento, {
+                titulo: cambios.titulo,
+                descripcion: cambios.descripcion,
+                fechaLimite: cambios.fechaLimite ? aFechaLocal(cambios.fechaLimite) : undefined,
+                peso: cambios.peso,
+            })
+            editado.validar()
 
-                const actualizacion = {
-                    titulo: titulo.trim(),
-                    descripcion:
-                        cambios.descripcion === undefined
-                            ? entregable.descripcion
-                            : cambios.descripcion?.trim() || null,
-                    actualizadoEn: new Date(),
-                }
-
-                if (cambios.fechaLimite) {
-                    const limite = aFechaLocal(cambios.fechaLimite)
-                    if (proyecto && limite > new Date(proyecto.fechaFinEstimada)) {
-                        throw new Error(
-                            'La fecha límite no puede ser posterior al fin del proyecto.',
-                        )
-                    }
-                    actualizacion.fechaLimite = limite
-                }
-
-                if (cambios.peso !== undefined && cambios.peso !== null) {
-                    const peso = Number(cambios.peso)
-                    if (!Number.isFinite(peso) || peso <= 0) {
-                        throw new Error('El peso debe ser un número mayor que 0.')
-                    }
-                    actualizacion.peso = peso
-                }
-
-                await this.entregables.actualizar(entregable._id, actualizacion, session)
-
-                // Recalculamos SIEMPRE: leer aquí dentro nos da los pesos ya
-                // actualizados, incluido el que acabamos de cambiar.
-                const hermanos = await this.entregables.listarPorProyecto(
-                    entregable.proyectoId,
-                    session,
+            const proyecto = await this.proyectos.buscarPorId(String(documento.proyectoId), contexto)
+            if (proyecto && editado.fechaLimite > new Date(proyecto.fechaFinEstimada)) {
+                throw new ReglaNegocioError(
+                    'La fecha límite no puede ser posterior al fin del proyecto.',
                 )
-                const avance = this.calcularAvance(hermanos)
+            }
 
-                await this.proyectos.actualizar(
-                    String(entregable.proyectoId),
-                    { avance, actualizadoEn: new Date() },
-                    session,
-                )
+            const actualizacion = {
+                titulo: editado.titulo,
+                descripcion: editado.descripcion,
+                fechaLimite: editado.fechaLimite,
+                peso: editado.peso,
+                actualizadoEn: new Date(),
+            }
+            await this.entregables.actualizar(documento._id, actualizacion, contexto)
 
-                resultado = { ...entregable, ...actualizacion, avance }
+            // Cambiar el peso mueve el avance: que lo recalcule el observador.
+            await this.emisor.emitir(EVENTOS.ENTREGABLE_EDITADO, {
+                proyectoId: documento.proyectoId,
+                contexto,
             })
 
-            return resultado
-        } finally {
-            await session.endSession()
-        }
+            const refrescado = await this.proyectos.buscarPorId(
+                String(documento.proyectoId),
+                contexto,
+            )
+
+            return { ...documento, ...actualizacion, avance: refrescado?.avance ?? 0 }
+        })
     }
 
-    // ELIMINAR — transaccional: no se puede eliminar un entregable aprobado. Recalcula el avance del proyecto.
+    // ELIMINAR — lo aprobado es historia y no se borra (lo decide el estado).
     async eliminar(referencia) {
-        const session = this.mongoClient.startSession()
+        return this.unidadDeTrabajo.ejecutar(async (contexto) => {
+            const documento = await this.#exigirEntregable(referencia, contexto)
+            const entregable = Entregable.desdeDocumento(documento)
 
-        try {
-            let eliminado = null
-
-            await session.withTransaction(async () => {
-                const entregable = await this.entregables.buscarPorIdOCodigo(referencia, session)
-                if (!entregable) {
-                    throw new Error(`No existe ningún entregable con la referencia "${referencia}".`)
-                }
-
-                // REGLA: lo aprobado es historia, no se borra.
-                if (entregable.estado === 'aprobado') {
-                    throw new Error('Un entregable aprobado no se puede eliminar.')
-                }
-
-                await this.entregables.eliminar(entregable._id, session)
-
-                const hermanos = await this.entregables.listarPorProyecto(
-                    entregable.proyectoId,
-                    session,
+            if (!entregable.estadoActual().permiteEliminacion()) {
+                throw new ReglaNegocioError(
+                    `Un entregable ${documento.estado} no se puede eliminar.`,
                 )
-                await this.proyectos.actualizar(
-                    String(entregable.proyectoId),
-                    { avance: this.calcularAvance(hermanos) },
-                    session,
-                )
+            }
 
-                eliminado = entregable
+            await this.entregables.eliminar(documento._id, contexto)
+
+            await this.emisor.emitir(EVENTOS.ENTREGABLE_ELIMINADO, {
+                proyectoId: documento.proyectoId,
+                contexto,
             })
 
-            return eliminado
-        } finally {
-            await session.endSession()
-        }
+            return documento
+        })
     }
 }

@@ -1,12 +1,15 @@
-import { BaseRepositorio } from './BaseRepositorio.js'
+import { Contrato } from '../models/Contrato.js'
+import { RepositorioEscritura } from './RepositorioEscritura.js'
 
-export class ContratoRepositorio extends BaseRepositorio {
+// PATRÓN REPOSITORY — CONTRATOS
+// Un contrato no se borra: se cancela. Es un documento legal.
+export class ContratoRepositorio extends RepositorioEscritura {
     constructor(db) {
         super(db, 'contratos')
     }
 
-    async buscarPorProyecto(proyectoId, session) {
-        return this.coleccion.findOne({ proyectoId }, { session })
+    async buscarPorProyecto(proyectoId, contexto) {
+        return this.coleccion.findOne({ proyectoId }, { session: contexto })
     }
 
     async listarPorEstado(estado) {
@@ -14,7 +17,7 @@ export class ContratoRepositorio extends BaseRepositorio {
     }
 
     async crearIndices() {
-        await this.prepararColeccion()
+        await this.prepararColeccion(Contrato.esquemaMongo())
         await this.coleccion.createIndex({ codigo: 1 }, { unique: true })
         // REGLA EN LA BASE DE DATOS: UN PROYECTO, UN SOLO CONTRATO.
         await this.coleccion.createIndex({ proyectoId: 1 }, { unique: true })

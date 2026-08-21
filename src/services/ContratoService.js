@@ -1,141 +1,130 @@
-import { formatearDinero, formatearFecha } from '../utils/formato.js'
+import { NoEncontradoError, ReglaNegocioError, ValidacionError } from '../errors/errores.js'
+import { Contrato } from '../models/Contrato.js'
 
-// REGLA DE NEGOCIO PARA CONTRATOS
+// REGLAS DE NEGOCIO PARA CONTRATOS
 export class ContratoService {
-    constructor(contratoRepositorio, proyectoRepositorio, clienteRepositorio, mongoClient) {
+    constructor(contratoRepositorio, proyectoRepositorio, clienteRepositorio, unidadDeTrabajo) {
         this.contratos = contratoRepositorio
         this.proyectos = proyectoRepositorio
         this.clientes = clienteRepositorio
-        this.mongoClient = mongoClient
+        this.unidadDeTrabajo = unidadDeTrabajo
+    }
+
+    async #exigir(referencia, contexto) {
+        const contrato = await this.contratos.buscarPorIdOCodigo(referencia, contexto)
+        if (!contrato) throw new NoEncontradoError('contrato', referencia)
+        return contrato
     }
 
     async listar(estado) {
         return estado ? this.contratos.listarPorEstado(estado) : this.contratos.listar()
     }
 
-    // Los borradores: los únicos editables y los únicos firmables.
     async listarBorradores() {
         return this.contratos.listarPorEstado('borrador')
     }
 
-    // Para la lista de elegir cuando se busca el contrato de un proyecto.
     async listarProyectos() {
         return this.proyectos.listar()
     }
 
+    /** El contrato de un proyecto. Es una relación 1:1. */
     async verPorProyecto(referencia) {
         const proyecto = await this.proyectos.buscarPorIdOCodigo(referencia)
-        if (!proyecto) throw new Error(`No existe ningún proyecto con la referencia "${referencia}".`)
+        if (!proyecto) throw new NoEncontradoError('proyecto', referencia)
 
         const contrato = await this.contratos.buscarPorProyecto(proyecto._id)
-        if (!contrato) throw new Error('Ese proyecto todavía no tiene contrato.')
+        if (!contrato) throw new ReglaNegocioError('Ese proyecto todavía no tiene contrato.')
 
         return contrato
     }
 
-    // REGLA: solo los borradores son editables. Un contrato firmado no se toca.
+    // EDITAR — solo los borradores, y validando el modelo completo.
     async editar(referencia, { condiciones, formaPago, valor }) {
-        const contrato = await this.contratos.buscarPorIdOCodigo(referencia)
-        if (!contrato) throw new Error(`No existe ningún contrato con la referencia "${referencia}".`)
+        const documento = await this.#exigir(referencia)
+        const actual = Contrato.desdeDocumento(documento)
 
-        if (contrato.estado !== 'borrador') {
-            throw new Error(
-                `El contrato ${contrato.codigo} está ${contrato.estado}: ya no se puede editar.`,
+        if (!actual.puedeEditarse()) {
+            throw new ReglaNegocioError(
+                `El contrato ${documento.codigo} está ${documento.estado}: ya no se puede editar.`,
             )
         }
 
-        const cambios = {}
-        if (condiciones?.trim()) cambios.condiciones = condiciones.trim()
-        if (formaPago?.trim()) cambios.formaPago = formaPago.trim()
+        const hayCambios =
+            condiciones?.trim() || formaPago?.trim() || (valor !== undefined && valor !== null)
+        if (!hayCambios) throw new ValidacionError('No indicaste ningún cambio.')
 
-        if (valor !== undefined && valor !== null) {
-            const monto = Number(valor)
-            if (!Number.isFinite(monto) || monto <= 0) {
-                throw new Error('El valor del contrato debe ser un número mayor que 0.')
-            }
-            cambios.valor = monto
+        // Se reconstruye y se valida entero: antes solo se comprobaba el valor.
+        const editado = Contrato.desdeDocumento(documento, {
+            condiciones: condiciones?.trim() || undefined,
+            formaPago: formaPago?.trim() || undefined,
+            valor: valor === undefined || valor === null ? undefined : Number(valor),
+        })
+        editado.validar()
+
+        const cambios = {
+            condiciones: editado.condiciones,
+            formaPago: editado.formaPago,
+            valor: editado.valor,
+            actualizadoEn: new Date(),
         }
 
-        if (Object.keys(cambios).length === 0) {
-            throw new Error('No indicaste ningún cambio.')
-        }
-
-        await this.contratos.actualizar(contrato._id, cambios)
-        return { ...contrato, ...cambios }
+        await this.contratos.actualizar(documento._id, cambios)
+        return { ...documento, ...cambios }
     }
 
-    // FIRMAR CONTRATO — transaccional: activa el contrato y sincroniza el proyecto.
+    // FIRMAR — atómico: activa el contrato y sincroniza el proyecto.
     async firmar(referencia) {
-        const session = this.mongoClient.startSession()
+        return this.unidadDeTrabajo.ejecutar(async (contexto) => {
+            const documento = await this.#exigir(referencia, contexto)
+            const contrato = Contrato.desdeDocumento(documento)
 
-        try {
-            let contratoFirmado = null
-
-            await session.withTransaction(async () => {
-                const contrato = await this.contratos.buscarPorIdOCodigo(referencia, session)
-                if (!contrato) {
-                    throw new Error(`No existe ningún contrato con la referencia "${referencia}".`)
-                }
-
-                if (contrato.estado !== 'borrador') {
-                    throw new Error(`El contrato ${contrato.codigo} ya está ${contrato.estado}.`)
-                }
-                if (!contrato.condiciones || contrato.condiciones.startsWith('Condiciones pend')) {
-                    throw new Error('Redacta las condiciones antes de firmar el contrato.')
-                }
-
-                const firmadoEn = new Date()
-
-                // Paso 1: activar el contrato
-                await this.contratos.actualizar(
-                    contrato._id,
-                    { estado: 'activo', firmadoEn },
-                    session,
+            if (contrato.estado !== 'borrador') {
+                throw new ReglaNegocioError(
+                    `El contrato ${documento.codigo} ya está ${documento.estado}.`,
                 )
-
-                // Paso 2: sincronizar el proyecto
-                await this.proyectos.actualizar(
-                    String(contrato.proyectoId),
-                    { contratoFirmado: true, contratoFirmadoEn: firmadoEn },
-                    session,
+            }
+            // La pregunta la responde el modelo, no un startsWith() suelto.
+            if (!contrato.tieneCondicionesRedactadas()) {
+                throw new ReglaNegocioError(
+                    'Redacta las condiciones antes de firmar el contrato.',
                 )
+            }
 
-                contratoFirmado = { ...contrato, estado: 'activo', firmadoEn }
-            })
+            const firmadoEn = new Date()
 
-            return contratoFirmado
-        } finally {
-            await session.endSession()
-        }
+            // Paso 1: activar el contrato
+            await this.contratos.actualizar(
+                documento._id,
+                { estado: 'activo', firmadoEn },
+                contexto,
+            )
+
+            // Paso 2: sincronizar el proyecto
+            await this.proyectos.actualizar(
+                String(documento.proyectoId),
+                { contratoFirmado: true, contratoFirmadoEn: firmadoEn },
+                contexto,
+            )
+
+            return { ...documento, estado: 'activo', firmadoEn }
+        })
     }
 
-    // Genera el texto del contrato para copiarlo o imprimirlo.
-    async generarDocumento(referencia) {
-        const contrato = await this.contratos.buscarPorIdOCodigo(referencia)
-        if (!contrato) throw new Error(`No existe ningún contrato con la referencia "${referencia}".`)
+    /**
+     * Reúne los datos del contrato con su cliente y su proyecto.
+     *
+     * Antes este método devolvía el documento ya MAQUETADO, con sus rayas y
+     * su dinero formateado. Eso era presentación dentro de la capa de negocio
+     * (y obligaba al servicio a importar utils/formato.js). Ahora devuelve
+     * datos; quien los pinta es commands/contratos.js.
+     */
+    async datosParaDocumento(referencia) {
+        const contrato = await this.#exigir(referencia)
 
         const cliente = await this.clientes.buscarPorId(String(contrato.clienteId))
         const proyecto = await this.proyectos.buscarPorId(String(contrato.proyectoId))
 
-        return [
-            '='.repeat(64),
-            `  CONTRATO DE PRESTACIÓN DE SERVICIOS  ·  ${contrato.codigo}`,
-            '='.repeat(64),
-            '',
-            `  CLIENTE:   ${cliente?.nombre ?? '(no encontrado)'}`,
-            `  EMPRESA:   ${cliente?.empresa ?? '-'}`,
-            `  PROYECTO:  ${proyecto?.nombre ?? '(no encontrado)'}`,
-            '',
-            `  VALOR:     ${formatearDinero(contrato.valor)}`,
-            `  PAGO:      ${contrato.formaPago}`,
-            `  VIGENCIA:  ${formatearFecha(contrato.fechaInicio)} al ${formatearFecha(contrato.fechaFin)}`,
-            '',
-            '  CONDICIONES:',
-            `  ${contrato.condiciones}`,
-            '',
-            `  ESTADO:    ${contrato.estado.toUpperCase()}`,
-            `  FIRMADO:   ${contrato.firmadoEn ? formatearFecha(contrato.firmadoEn) : 'SIN FIRMAR'}`,
-            '='.repeat(64),
-        ].join('\n')
+        return { contrato, cliente, proyecto }
     }
 }

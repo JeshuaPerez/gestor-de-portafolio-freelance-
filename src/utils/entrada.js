@@ -1,16 +1,14 @@
 import inquirer from 'inquirer'
+import { OperacionCancelada } from '../errors/errores.js'
+import { aOpcionesDeEntrada } from '../validacion/reglas.js'
 import { estilo } from './estilo.js'
 
-// ENTRADA DE DATOS — preguntas al usuario y validación de lo que escribe
+// ENTRADA DE DATOS - preguntas al usuario y validacion de lo que escribe
 const PALABRA_CANCELAR = 'cancelar'
 
-// HERENCIA DE COLORES
-export class OperacionCancelada extends Error {
-    constructor() {
-        super('Operación cancelada.')
-        this.name = 'OperacionCancelada'
-    }
-}
+// Se reexporta para que los menus la sigan importando de aqui, pero la clase
+// vive con el resto de errores del dominio.
+export { OperacionCancelada }
 
 // AVISO DE CÓMO CANCELAR
 export const AVISO_CANCELAR = estilo.tenue(
@@ -279,4 +277,42 @@ export async function elegirAccion(titulo, acciones) {
     ])
 
     return valor
+}
+
+// ---------------------------------------------------------------------------
+// PUENTE ENTRE LAS REGLAS DEL MODELO Y LAS PREGUNTAS DE LA CONSOLA
+//
+// Antes los limites se repetian a mano en cada menu:
+//
+//     await pedirTexto('Titulo', { min: 3 })      <- y el modelo decia 3 tambien
+//
+// Si el modelo cambiaba a 5, la consola seguia aceptando 3 y el error saltaba
+// despues, ya en el servicio. Ahora la pregunta SALE de la regla, asi que los
+// limites que ve el usuario son siempre los que valida el modelo.
+// ---------------------------------------------------------------------------
+
+// Un mapa en vez de un switch: anadir un tipo de regla no obliga a tocar
+// la funcion de abajo (OCP).
+const PREGUNTA_POR_TIPO = {
+    texto: (texto, config) => pedirTexto(texto, config),
+    email: (texto, config) => pedirEmail(texto, config),
+    telefono: (texto, config) => pedirTelefono(texto, config),
+    numero: (texto, config) => pedirNumero(texto, config),
+    fecha: (texto, config) => pedirFecha(texto, config),
+    lista: (texto, config, regla) => pedirOpcion(texto, regla.valores),
+}
+
+/**
+ * Pregunta un campo usando la regla que el modelo declara para el.
+ *
+ *     await pedirSegunRegla('Titulo', Entregable.REGLAS.titulo)
+ *
+ * `extra` sirve para lo que la regla no sabe: el valor actual al editar,
+ * un ejemplo, o forzar que sea opcional en esta pantalla concreta.
+ */
+export async function pedirSegunRegla(texto, regla, extra = {}) {
+    const preguntar = PREGUNTA_POR_TIPO[regla.tipo]
+    if (!preguntar) throw new Error(`No se como preguntar un campo de tipo "${regla.tipo}".`)
+
+    return preguntar(texto, aOpcionesDeEntrada(regla, extra), regla)
 }

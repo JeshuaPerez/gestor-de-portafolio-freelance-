@@ -1,56 +1,64 @@
-//POO: MODELO PROPUESTA.
+import { enDias } from '../dominio/valores.js'
+import { ReglaNegocioError } from '../errors/errores.js'
+import { Modelo } from './Modelo.js'
 
-export class Propuesta {
-
+// MODELO PROPUESTA
+export class Propuesta extends Modelo {
+    static entidad = 'propuesta'
     static ESTADOS = ['pendiente', 'aceptada', 'rechazada']
 
-    constructor({ clienteId, codigo, titulo, descripcion, monto, plazoDias, fechaVencimiento }) {
+    static REGLAS = {
+        codigo: { tipo: 'texto', min: 7, max: 12, asignadoAlGuardar: true, etiqueta: 'código' },
+        clienteId: { tipo: 'id', etiqueta: 'cliente' },
+        titulo: { tipo: 'texto', min: 5, max: 150, etiqueta: 'título' },
+        descripcion: { tipo: 'texto', max: 1000, opcional: true, etiqueta: 'descripción' },
+        monto: { tipo: 'numero', min: 0.01, max: 99999999, etiqueta: 'monto' },
+        plazoDias: { tipo: 'numero', entero: true, min: 1, max: 3650, etiqueta: 'plazo en días' },
+        estado: { tipo: 'lista', valores: Propuesta.ESTADOS, etiqueta: 'estado' },
+        motivoRechazo: {
+            tipo: 'texto',
+            min: 5,
+            max: 500,
+            opcional: true,
+            etiqueta: 'motivo del rechazo',
+        },
+        fechaVencimiento: { tipo: 'fecha', etiqueta: 'fecha de vencimiento' },
+        creadoEn: { tipo: 'fecha', etiqueta: 'fecha de creación' },
+    }
+
+    constructor({
+        clienteId,
+        codigo = null,
+        titulo,
+        descripcion,
+        monto,
+        plazoDias,
+        estado = 'pendiente',
+        motivoRechazo = null,
+        fechaVencimiento,
+        creadoEn,
+    }) {
+        super()
         this.clienteId = clienteId
-        this.codigo = codigo ?? null 
-        this.titulo = titulo
-        this.descripcion = descripcion
-        this.monto = Number(monto) 
+        this.codigo = codigo
+        this.titulo = titulo?.trim() || null
+        this.descripcion = descripcion?.trim() || null
+        this.monto = Number(monto)
         this.plazoDias = Number(plazoDias)
-        this.estado = 'pendiente' 
-        this.motivoRechazo = null
-        this.fechaVencimiento = fechaVencimiento ?? Propuesta.enDias(30)
-        this.creadoEn = new Date()
+        this.estado = estado
+        this.motivoRechazo = motivoRechazo?.trim() || null
+        this.fechaVencimiento = fechaVencimiento ?? enDias(30)
+        this.creadoEn = creadoEn ?? new Date()
     }
 
-    static enDias(dias) {
-        const fecha = new Date()
-        fecha.setDate(fecha.getDate() + dias)
-        return fecha
-    }
-
-    validar() {
-        if (!this.clienteId) {
-            throw new Error('La propuesta debe pertenecer a un cliente.')
-        }
-        if (!this.titulo || this.titulo.trim().length < 5) {
-            throw new Error('El título es obligatorio (mínimo 5 caracteres).')
-        }
-        
-        if (!Number.isFinite(this.monto) || this.monto <= 0) {
-            throw new Error('El monto debe ser un número mayor que 0.')
-        }
-        if (!Number.isInteger(this.plazoDias) || this.plazoDias <= 0) {
-            throw new Error('El plazo debe ser un número entero de días mayor que 0.')
+    // Regla que cruza dos campos: no cabe en una regla suelta.
+    validarReglasPropias() {
+        if (this.estado === 'rechazada' && !this.motivoRechazo) {
+            throw new ReglaNegocioError('Una propuesta rechazada tiene que llevar el motivo.')
         }
     }
 
-    aDocumento() {
-        return {
-            clienteId: this.clienteId,
-            codigo: this.codigo,
-            titulo: this.titulo.trim(),
-            descripcion: this.descripcion?.trim() || null,
-            monto: this.monto,
-            plazoDias: this.plazoDias,
-            estado: this.estado,
-            motivoRechazo: this.motivoRechazo,
-            fechaVencimiento: this.fechaVencimiento,
-            creadoEn: this.creadoEn,
-        }
+    puedeEditarse() {
+        return this.estado === 'pendiente'
     }
 }

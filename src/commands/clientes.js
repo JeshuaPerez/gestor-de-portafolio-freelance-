@@ -1,27 +1,23 @@
+import { Cliente } from '../models/Cliente.js'
 import {
     AVISO_CANCELAR,
-    OperacionCancelada,
     confirmar,
     elegirAccion,
     elegirDeLista,
-    pedirEmail,
-    pedirTelefono,
+    pedirSegunRegla,
     pedirTexto,
 } from '../utils/entrada.js'
 import { colorEstado, estilo, mensaje } from '../utils/estilo.js'
 import { mostrarTabla } from '../utils/tabla.js'
+import { ejecutarAccion, encabezado } from './comun.js'
 
-
-//  CAPA DE PRESENTACIÓN - ITERACCION CON EL USUARIO
-
-// UNA lINEA POR CLIENTE, PARA LAS LISTAS DONDE HAY QUE ELEGIR.
+// CAPA DE PRESENTACIÓN — CLIENTES
+// Solo pregunta y muestra. No consulta la base de datos ni decide reglas.
 
 function describirCliente(c) {
     const codigo = (c.codigo ?? '---').padEnd(9)
     return `${codigo} ${c.nombre.padEnd(24)} <${c.email}>`
 }
-
-//IMPRIME UNA LISTA DE CLIENTES COMO TABLA
 
 function mostrarClientes(clientes) {
     mostrarTabla({
@@ -52,19 +48,24 @@ export async function menuClientes(clienteService) {
             { nombre: 'Volver al menú principal', valor: 'volver' },
         ])
 
-        //TODO EL BLOQUE VA DENTRO DE UN TRY/CATCH.
-        try {
+        if (accion === 'volver') return
+
+        await ejecutarAccion(async () => {
             switch (accion) {
                 case 'crear': {
-                    console.log(estilo.titulo('\n--- Nuevo cliente ---'))
+                    encabezado('Nuevo cliente')
                     console.log(AVISO_CANCELAR)
-                    const nombre = await pedirTexto('Nombre', { min: 3, ejemplo: 'Ana Gómez' })
-                    const email = await pedirEmail('Email')
-                    const empresa = await pedirTexto('Empresa', {
-                        opcional: true,
+
+                    // Las preguntas salen de Cliente.REGLAS: los mínimos que ve
+                    // el usuario son exactamente los que valida el modelo.
+                    const nombre = await pedirSegunRegla('Nombre', Cliente.REGLAS.nombre, {
+                        ejemplo: 'Ana Gómez',
+                    })
+                    const email = await pedirSegunRegla('Email', Cliente.REGLAS.email)
+                    const empresa = await pedirSegunRegla('Empresa', Cliente.REGLAS.empresa, {
                         ejemplo: 'Constructora Ejemplo, S.A.',
                     })
-                    const telefono = await pedirTelefono('Teléfono', { opcional: true })
+                    const telefono = await pedirSegunRegla('Teléfono', Cliente.REGLAS.telefono)
 
                     const codigo = await clienteService.crear({
                         nombre,
@@ -77,10 +78,9 @@ export async function menuClientes(clienteService) {
                     break
                 }
 
-                case 'listar': {
+                case 'listar':
                     mostrarClientes(await clienteService.listar())
                     break
-                }
 
                 case 'buscar': {
                     const texto = await pedirTexto('Buscar por código, nombre, empresa o email', {
@@ -92,7 +92,9 @@ export async function menuClientes(clienteService) {
                 }
 
                 case 'editar': {
-                    console.log(estilo.titulo('\n--- Editar cliente ---'))
+                    encabezado('Editar cliente', [
+                        'Cada campo viene con su valor actual: pulsa Enter para dejarlo igual.',
+                    ])
                     console.log(AVISO_CANCELAR)
 
                     const cliente = await elegirDeLista(await clienteService.listar(), {
@@ -101,17 +103,16 @@ export async function menuClientes(clienteService) {
                         siVacio: 'Todavía no hay clientes.',
                     })
 
-                    console.log(
-                        estilo.tenue('  Cada campo viene con su valor actual: pulsa Enter para dejarlo igual.'),
-                    )
-                    const nombre = await pedirTexto('Nombre', { min: 3, actual: cliente.nombre })
-                    const email = await pedirEmail('Email', { actual: cliente.email })
-                    const empresa = await pedirTexto('Empresa', {
-                        opcional: true,
+                    const nombre = await pedirSegunRegla('Nombre', Cliente.REGLAS.nombre, {
+                        actual: cliente.nombre,
+                    })
+                    const email = await pedirSegunRegla('Email', Cliente.REGLAS.email, {
+                        actual: cliente.email,
+                    })
+                    const empresa = await pedirSegunRegla('Empresa', Cliente.REGLAS.empresa, {
                         actual: cliente.empresa,
                     })
-                    const telefono = await pedirTelefono('Teléfono', {
-                        opcional: true,
+                    const telefono = await pedirSegunRegla('Teléfono', Cliente.REGLAS.telefono, {
                         actual: cliente.telefono,
                     })
 
@@ -121,7 +122,10 @@ export async function menuClientes(clienteService) {
                 }
 
                 case 'desactivar': {
-                    console.log(estilo.titulo('\n--- Desactivar cliente ---'))
+                    encabezado('Desactivar cliente', [
+                        'Un cliente no se elimina nunca: se desactiva.',
+                    ])
+
                     const cliente = await elegirDeLista(await clienteService.listarActivos(), {
                         etiqueta: 'Elige el cliente a desactivar',
                         describir: describirCliente,
@@ -132,20 +136,18 @@ export async function menuClientes(clienteService) {
                         `¿Desactivar a "${cliente.nombre}" (${cliente.codigo})?`,
                     )
                     if (!seguro) {
-                        console.log(estilo.aviso('\n  Operación cancelada.'))
+                        console.log('\n' + mensaje.aviso('Operación cancelada.'))
                         break
                     }
 
                     await clienteService.desactivar(cliente._id)
                     console.log('\n' + mensaje.exito(`Cliente "${cliente.nombre}" desactivado.`))
-                    console.log(
-                        estilo.tenue('  Sus proyectos y facturas se conservan intactos.'),
-                    )
+                    console.log(estilo.tenue('  Sus proyectos y facturas se conservan intactos.'))
                     break
                 }
 
                 case 'reactivar': {
-                    console.log(estilo.titulo('\n--- Reactivar cliente ---'))
+                    encabezado('Reactivar cliente')
 
                     const cliente = await elegirDeLista(await clienteService.listarInactivos(), {
                         etiqueta: 'Elige el cliente a reactivar',
@@ -157,17 +159,7 @@ export async function menuClientes(clienteService) {
                     console.log('\n' + mensaje.exito(`Cliente "${cliente.nombre}" reactivado.`))
                     break
                 }
-
-                case 'volver':
-                    return
-                    // sale del while y vuelve al menú principal
             }
-        } catch (error) {
-            if (error instanceof OperacionCancelada) {
-                console.log('\n' + mensaje.aviso('Operación cancelada.'))
-            } else {
-                console.log('\n' + mensaje.error(error.message))
-            }
-        }
+        })
     }
 }

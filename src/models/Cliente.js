@@ -1,43 +1,32 @@
-// POO: MODELO CLIENTE
+import { Modelo } from './Modelo.js'
 
-export class Cliente {
-    constructor({ nombre, email, empresa, telefono, activo = true }) {
-        this.codigo = null
-        this.nombre = nombre
-        this.email = email
-        this.empresa = empresa
-        this.telefono = telefono
-        this.activo = activo 
-        this.creadoEn = new Date()
+// MODELO CLIENTE
+export class Cliente extends Modelo {
+    static entidad = 'cliente'
+
+    // ÚNICA FUENTE DE VERDAD de lo que es un cliente válido.
+    // De aquí salen la validación en memoria, el $jsonSchema de MongoDB y
+    // los límites que la consola le enseña al usuario.
+    static REGLAS = {
+        codigo: { tipo: 'texto', min: 7, max: 12, asignadoAlGuardar: true, etiqueta: 'código' },
+        nombre: { tipo: 'texto', min: 3, max: 120, etiqueta: 'nombre' },
+        email: { tipo: 'email', etiqueta: 'email' },
+        empresa: { tipo: 'texto', max: 120, opcional: true, etiqueta: 'empresa' },
+        telefono: { tipo: 'telefono', minimoDigitos: 7, opcional: true, etiqueta: 'teléfono' },
+        activo: { tipo: 'booleano', etiqueta: 'estado de actividad' },
+        creadoEn: { tipo: 'fecha', etiqueta: 'fecha de alta' },
     }
 
-    //VALIDA LOS CAMPOS. SI ALGO ESTÁ MAL, LANZA UN ERROR CON EL MOTIVO.
-     
-    validar() {
-        if (!this.nombre || this.nombre.trim().length < 3) {
-            throw new Error('El nombre es obligatorio (mínimo 3 caracteres).')
-        }
-
-        const formatoEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-        if (!formatoEmail.test(this.email ?? '')) {
-            throw new Error('El email no tiene un formato válido.')
-        }
-
-        if (this.telefono && this.telefono.replace(/\D/g, '').length < 7) {
-            throw new Error('El teléfono debe tener al menos 7 dígitos.')
-        }
-    }
-
-    // CONVIERTE LA instancia EN UN OBJETO plano PARA GUARDARLO EN MONGODB.
-    aDocumento() {
-        return {
-            codigo: this.codigo,
-            nombre: this.nombre.trim(),
-            email: this.email.trim().toLowerCase(), 
-            empresa: this.empresa?.trim() || null,
-            telefono: this.telefono?.trim() || null,
-            activo: this.activo,
-            creadoEn: this.creadoEn,
-        }
+    constructor({ codigo = null, nombre, email, empresa, telefono, activo = true, creadoEn }) {
+        super()
+        this.codigo = codigo
+        // La limpieza ocurre AQUÍ, antes de validar: así " ana " y "ana" son
+        // lo mismo tanto para la validación como para lo que se guarda.
+        this.nombre = nombre?.trim() || null
+        this.email = email?.trim().toLowerCase() || null
+        this.empresa = empresa?.trim() || null
+        this.telefono = telefono?.trim() || null
+        this.activo = activo
+        this.creadoEn = creadoEn ?? new Date()
     }
 }

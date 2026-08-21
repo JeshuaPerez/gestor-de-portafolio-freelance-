@@ -1,8 +1,10 @@
-import { aFechaLocal, redondearDinero } from '../utils/formato.js'
+import { aFechaLocal, redondearDinero } from '../dominio/valores.js'
+import { ValidacionError } from '../errors/errores.js'
+import { Modelo } from './Modelo.js'
 
-//POO: MODELO Movimiento (finanzas).
-
-export class Movimiento {
+// MODELO MOVIMIENTO (finanzas)
+export class Movimiento extends Modelo {
+    static entidad = 'movimiento'
     static TIPOS = ['ingreso', 'egreso']
 
     static CATEGORIAS = {
@@ -10,61 +12,80 @@ export class Movimiento {
         egreso: ['herramientas', 'licencias', 'servicios', 'impuestos', 'otros'],
     }
 
-    constructor({ proyectoId, clienteId, tipo, categoria, concepto, monto, referencia, fecha }) {
-        this.codigo = null
+    /** Todas las categorías juntas: es lo que el esquema de Mongo puede exigir. */
+    static TODAS_LAS_CATEGORIAS = [
+        ...Movimiento.CATEGORIAS.ingreso,
+        ...Movimiento.CATEGORIAS.egreso,
+    ]
+
+    static REGLAS = {
+        codigo: { tipo: 'texto', min: 7, max: 12, asignadoAlGuardar: true, etiqueta: 'código' },
+        proyectoId: { tipo: 'id', etiqueta: 'proyecto' },
+        clienteId: { tipo: 'id', etiqueta: 'cliente' },
+        tipo: { tipo: 'lista', valores: Movimiento.TIPOS, etiqueta: 'tipo' },
+        // El esquema solo puede comprobar que la categoría existe; que además
+        // CORRESPONDA al tipo se comprueba en validarReglasPropias().
+        categoria: {
+            tipo: 'lista',
+            valores: Movimiento.TODAS_LAS_CATEGORIAS,
+            etiqueta: 'categoría',
+        },
+        concepto: { tipo: 'texto', min: 3, max: 300, etiqueta: 'concepto' },
+        monto: { tipo: 'numero', min: 0.01, max: 99999999, etiqueta: 'monto' },
+        referencia: { tipo: 'texto', min: 3, max: 60, etiqueta: 'referencia' },
+        fecha: { tipo: 'fecha', etiqueta: 'fecha' },
+        anulado: { tipo: 'booleano', etiqueta: 'anulado' },
+        creadoEn: { tipo: 'fecha', etiqueta: 'fecha de registro' },
+    }
+
+    constructor({
+        proyectoId,
+        clienteId,
+        codigo = null,
+        tipo,
+        categoria,
+        concepto,
+        monto,
+        referencia,
+        fecha,
+        anulado = false,
+        creadoEn,
+    }) {
+        super()
+        this.codigo = codigo
         this.proyectoId = proyectoId
         this.clienteId = clienteId
-        this.tipo = tipo?.trim().toLowerCase()
-        this.categoria = categoria?.trim().toLowerCase()
-        this.concepto = concepto
+        this.tipo = tipo?.trim().toLowerCase() || null
+        this.categoria = categoria?.trim().toLowerCase() || null
+        this.concepto = concepto?.trim() || null
         this.monto = redondearDinero(monto)
-        this.referencia = referencia?.trim().toUpperCase()
+        this.referencia = referencia?.trim().toUpperCase() || null
         this.fecha = fecha ? aFechaLocal(fecha) : new Date()
-        this.anulado = false
-        this.creadoEn = new Date()
+        this.anulado = anulado
+        this.creadoEn = creadoEn ?? new Date()
     }
 
-    validar() {
-        if (!this.proyectoId) throw new Error('El movimiento debe pertenecer a un proyecto.')
-
-        if (!Movimiento.TIPOS.includes(this.tipo)) {
-            throw new Error(`El tipo debe ser: ${Movimiento.TIPOS.join(' o ')}.`)
-        }
-
-        const permitidas = Movimiento.CATEGORIAS[this.tipo]
+    /**
+     * Regla que cruza dos campos: "licencias" es una categoría válida, pero
+     * no para un ingreso. Eso no lo puede expresar una regla suelta.
+     */
+    validarReglasPropias() {
+        const permitidas = Movimiento.CATEGORIAS[this.tipo] ?? []
         if (!permitidas.includes(this.categoria)) {
-            throw new Error(
-                `Categoría no válida para un ${this.tipo}. Opciones: ${permitidas.join(', ')}.`,
+            throw new ValidacionError(
+                `Categoría no válida para un ${this.tipo}: "${this.categoria}" no está ` +
+                    `permitida. Opciones: ${permitidas.join(', ')}.`,
+                { campo: 'categoria' },
             )
         }
-
-        if (!this.concepto || this.concepto.trim().length < 3) {
-            throw new Error('El concepto es obligatorio (mínimo 3 caracteres).')
-        }
-        if (!Number.isFinite(this.monto) || this.monto <= 0) {
-            throw new Error('El monto debe ser un número mayor que 0.')
-        }
-        if (!this.referencia || this.referencia.length < 3) {
-            throw new Error('La referencia es obligatoria (nº de factura o comprobante).')
-        }
-        if (Number.isNaN(this.fecha.getTime())) {
-            throw new Error('La fecha no es válida. Usa el formato AAAA-MM-DD.')
-        }
     }
 
-    aDocumento() {
-        return {
-            codigo: this.codigo,
-            proyectoId: this.proyectoId,
-            clienteId: this.clienteId,
-            tipo: this.tipo,
-            categoria: this.categoria,
-            concepto: this.concepto.trim(),
-            monto: this.monto,
-            referencia: this.referencia,
-            fecha: this.fecha,
-            anulado: this.anulado,
-            creadoEn: this.creadoEn,
-        }
+    esIngreso() {
+        return this.tipo === 'ingreso'
+    }
+
+    /** Sobre qué acumulado del proyecto impacta este movimiento. */
+    campoAcumulado() {
+        return this.esIngreso() ? 'cobrado' : 'gastado'
     }
 }

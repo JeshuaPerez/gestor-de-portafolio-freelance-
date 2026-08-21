@@ -13,11 +13,11 @@ const MARCA_ERROR = icono.error
 const logReal = console.log
 let capturado = []
 
-async function recorrer(menu, servicio, pulsaciones) {
+async function recorrer(abrirMenu, pulsaciones) {
     capturado = []
     console.log = (...args) => capturado.push(args.join(' '))
 
-    await teclear(menu(servicio), pulsaciones)
+    await teclear(abrirMenu(), pulsaciones)
 
     console.log = logReal
 
@@ -85,18 +85,23 @@ for (const r of [clientes, propuestas, proyectos, contratos, entregables, movimi
     await r.crearIndices()
 }
 
-const clienteService = new svc.ClienteService(clientes)
-const proyectoService = new svc.ProyectoService(proyectos, clientes, entregables)
-const propuestaService = new svc.PropuestaService(
-    propuestas,
-    proyectos,
-    contratos,
-    clientes,
-    mongoClient,
+// Los servicios se montan con el MISMO composition root que usa la app, asi
+// que la prueba tambien verifica que el cableado real funciona.
+// Fijate en lo que se le pasa ahora: una UnidadDeTrabajo, no el mongoClient.
+const { construirServicios } = await import(`${base}/config/contenedor.js`)
+const { UnidadDeTrabajoMongo } = await import(`${base}/persistencia/UnidadDeTrabajo.js`)
+
+const servicios = construirServicios(
+    { clientes, propuestas, proyectos, contratos, entregables, movimientos },
+    new UnidadDeTrabajoMongo(mongoClient),
 )
-const contratoService = new svc.ContratoService(contratos, proyectos, clientes, mongoClient)
-const entregableService = new svc.EntregableService(entregables, proyectos, mongoClient)
-const finanzaService = new svc.FinanzaService(movimientos, proyectos, clientes, mongoClient)
+
+const clienteService = servicios.clientes
+const proyectoService = servicios.proyectos
+const propuestaService = servicios.propuestas
+const contratoService = servicios.contratos
+const entregableService = servicios.entregables
+const finanzaService = servicios.finanzas
 
 logReal('\n=== PANTALLAS DE LOS SEIS MENUS ===\n')
 
@@ -137,7 +142,7 @@ try {
     })
 
     await prueba('Clientes: listar (el bug de la tabla)', async () => {
-        const salida = await recorrer(menus.menuClientes, clienteService, [
+        const salida = await recorrer(() => menus.menuClientes(clienteService), [
             ...bajar(1), // Listar clientes
             ...bajar(6), // Volver
         ])
@@ -147,7 +152,7 @@ try {
     })
 
     await prueba('Clientes: buscar', async () => {
-        const salida = await recorrer(menus.menuClientes, clienteService, [
+        const salida = await recorrer(() => menus.menuClientes(clienteService), [
             ...bajar(2), // Buscar cliente
             'juan' + ENTER,
             ...bajar(6), // Volver
@@ -157,7 +162,7 @@ try {
     })
 
     await prueba('Propuestas: listar y estadisticas', async () => {
-        const salida = await recorrer(menus.menuPropuestas, propuestaService, [
+        const salida = await recorrer(() => menus.menuPropuestas(propuestaService), [
             ...bajar(1), // Listar
             ...bajar(6), // Estadisticas
             ...bajar(7), // Volver
@@ -166,13 +171,23 @@ try {
         assert.ok(salida.includes('Conversión'))
     })
 
-    await prueba('Proyectos: listar y ver ficha', async () => {
-        const salida = await recorrer(menus.menuProyectos, proyectoService, [
-            ...bajar(0), // Listar
-            ...bajar(2), // Ver ficha
-            ENTER, // elige el unico proyecto
-            ...bajar(7), // Volver
-        ])
+    await prueba('Proyectos: listar, abrir uno y ver su ficha', async () => {
+        const salida = await recorrer(
+            () =>
+                menus.menuProyectos({
+                    proyectos: proyectoService,
+                    entregables: entregableService,
+                    contratos: contratoService,
+                }),
+            [
+                ...bajar(1), // Listar todos
+                ...bajar(0), // Abrir un proyecto
+                ENTER, //      elige el unico proyecto
+                ...bajar(0), // Ver ficha completa
+                ...bajar(7), // Volver a la lista de proyectos
+                ...bajar(4), // Volver al menu principal
+            ],
+        )
         assert.ok(salida.includes('PRY-0001'))
         assert.ok(salida.includes('Cliente'), 'la ficha trae la etiqueta Cliente')
         assert.ok(salida.includes('Juan Lema'), 'la ficha trae el nombre del cliente')
@@ -180,31 +195,40 @@ try {
         assert.ok(salida.includes('╭') || salida.includes('┌'), 'la ficha va dentro de un panel')
     })
 
-    await prueba('Contratos: listar e imprimir el documento', async () => {
-        const salida = await recorrer(menus.menuContratos, contratoService, [
-            ...bajar(0), // Listar
-            ...bajar(4), // Imprimir documento
-            ENTER, // elige el unico contrato
-            ...bajar(5), // Volver
-        ])
+    await prueba('Contrato: se entra por su proyecto y se imprime', async () => {
+        // El contrato ya no se busca por su cuenta: se abre desde el proyecto
+        // al que pertenece, porque la relacion es 1:1.
+        const proyecto = await proyectos.buscarPorIdOCodigo('PRY-0001')
+
+        const salida = await recorrer(
+            () => menus.menuContratoDeProyecto(proyecto, contratoService),
+            [
+                ...bajar(1), // Ver documento imprimible
+                ...bajar(4), // Volver al proyecto
+            ],
+        )
         assert.ok(salida.includes('CON-0001'))
         assert.ok(salida.includes('CONTRATO DE PRESTACIÓN DE SERVICIOS'))
         assert.ok(salida.includes('30% de anticipo'))
     })
 
-    await prueba('Entregables: listar los de un proyecto y los vencidos', async () => {
-        const salida = await recorrer(menus.menuEntregables, entregableService, [
-            ...bajar(1), // Listar los de un proyecto
-            ENTER, // elige el unico proyecto
-            ...bajar(4), // Ver vencidos
-            ...bajar(6), // Volver
-        ])
+    await prueba('Entregables: viven dentro de su proyecto', async () => {
+        // Ya no hay que elegir el proyecto: llega elegido desde el menu de arriba.
+        const proyecto = await proyectos.buscarPorIdOCodigo('PRY-0001')
+
+        const salida = await recorrer(
+            () => menus.menuEntregablesDeProyecto(proyecto, entregableService),
+            [
+                ...bajar(0), // Ver los entregables de este proyecto
+                ...bajar(5), // Volver al proyecto
+            ],
+        )
         assert.ok(salida.includes('ENT-0001'))
         assert.ok(salida.includes('Diseño de interfaz interactiva'))
     })
 
     await prueba('Finanzas: movimientos, balances y rentabilidad', async () => {
-        const salida = await recorrer(menus.menuFinanzas, finanzaService, [
+        const salida = await recorrer(() => menus.menuFinanzas(finanzaService), [
             ...bajar(1), // Listar movimientos
             'n' + ENTER, // ¿filtrar por proyecto? no
             ...bajar(3), // Balance general
@@ -221,10 +245,32 @@ try {
         assert.ok(salida.includes('Margen'))
     })
 
+    await prueba('El menu principal ya NO ofrece Entregables ni Contratos', async () => {
+        // Esta es la prueba de la reestructuracion: un entregable y un contrato
+        // no son entidades independientes, asi que no pueden ser modulos del
+        // menu principal. Se llega a ellos desde su proyecto.
+        const { MODULOS, buscarModulo } = await import(`${base}/commands/registro.js`)
+
+        const ids = MODULOS.map((m) => m.id)
+        assert.deepEqual(ids, ['clientes', 'propuestas', 'proyectos', 'finanzas'])
+        assert.equal(buscarModulo('entregables'), undefined, 'entregables NO es modulo principal')
+        assert.equal(buscarModulo('contratos'), undefined, 'contratos NO es modulo principal')
+
+        // Y siguen siendo alcanzables, pero desde dentro del proyecto.
+        const proyectoMenu = await import(`${base}/commands/proyectos.js`)
+        assert.equal(typeof proyectoMenu.menuProyectos, 'function')
+
+        const entregableMenu = await import(`${base}/commands/entregables.js`)
+        assert.equal(typeof entregableMenu.menuEntregablesDeProyecto, 'function')
+
+        const contratoMenu = await import(`${base}/commands/contratos.js`)
+        assert.equal(typeof contratoMenu.menuContratoDeProyecto, 'function')
+    })
+
     await prueba('Las pantallas aguantan con las colecciones vacias', async () => {
         // El otro extremo: sin datos, ninguna tabla debe reventar.
         await db.collection('movimientos').deleteMany({})
-        const salida = await recorrer(menus.menuFinanzas, finanzaService, [
+        const salida = await recorrer(() => menus.menuFinanzas(finanzaService), [
             ...bajar(1), // Listar movimientos
             'n' + ENTER,
             ...bajar(7), // Volver
@@ -239,6 +285,6 @@ try {
 }
 
 logReal(`\n=====================================`)
-logReal(`  ${ok}/8 pruebas de pantalla OK`)
+logReal(`  ${ok}/9 pruebas de pantalla OK`)
 logReal(`=====================================`)
 process.exit(0)

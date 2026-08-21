@@ -1,19 +1,25 @@
-import { BaseRepositorio } from './BaseRepositorio.js'
+import { Cliente } from '../models/Cliente.js'
+import { RepositorioEscritura } from './RepositorioEscritura.js'
 
-//PATRÓN REPOSITORY — CLIENTES. HEREDA EL CRUD COMPLETO DE BASEREPOSITORIO 
-//(CREAR, BUSCARPORID, LISTAR, ACTUALIZAR...).
-export class ClienteRepositorio extends BaseRepositorio {
+// PATRÓN REPOSITORY — CLIENTES
+//
+// Hereda de RepositorioEscritura, NO de RepositorioEliminable: un cliente
+// nunca se borra, se desactiva. Ahora eso no es solo un comentario en el
+// servicio — es que el método `eliminar` no existe en esta clase.
+export class ClienteRepositorio extends RepositorioEscritura {
     constructor(db) {
-        super(db, 'clientes') //LLAMA AL CONSTRUCTOR DEL PADRE
+        super(db, 'clientes')
     }
 
-    async buscarPorEmail(email, session) {
-        return this.coleccion.findOne({ email: email.trim().toLowerCase() }, { session })
+    async buscarPorEmail(email, contexto) {
+        return this.coleccion.findOne(
+            { email: email.trim().toLowerCase() },
+            { session: contexto },
+        )
     }
 
     async buscarPorTexto(texto) {
-
-        const patron = BaseRepositorio.escaparRegex(texto)
+        const patron = ClienteRepositorio.escaparRegex(texto)
 
         return this.coleccion
             .find({
@@ -28,7 +34,8 @@ export class ClienteRepositorio extends BaseRepositorio {
     }
 
     async crearIndices() {
-        await this.prepararColeccion()
+        // El esquema sale del modelo: la misma declaración que valida en memoria.
+        await this.prepararColeccion(Cliente.esquemaMongo())
         await this.coleccion.createIndex({ email: 1 }, { unique: true })
         await this.coleccion.createIndex({ codigo: 1 }, { unique: true })
     }

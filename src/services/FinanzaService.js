@@ -1,149 +1,131 @@
+import { aFechaLocal, finDelDiaLocal, redondearDinero } from '../dominio/valores.js'
+import { ConflictoError, NoEncontradoError, ReglaNegocioError, ValidacionError } from '../errors/errores.js'
 import { Movimiento } from '../models/Movimiento.js'
-import { aFechaLocal, finDelDiaLocal, redondearDinero } from '../utils/formato.js'
 
 // REGLAS DE NEGOCIO PARA FINANZAS
 export class FinanzaService {
-    constructor(movimientoRepositorio, proyectoRepositorio, clienteRepositorio, mongoClient) {
+    constructor(movimientoRepositorio, proyectoRepositorio, clienteRepositorio, unidadDeTrabajo) {
         this.movimientos = movimientoRepositorio
         this.proyectos = proyectoRepositorio
         this.clientes = clienteRepositorio
-        this.mongoClient = mongoClient
+        this.unidadDeTrabajo = unidadDeTrabajo
     }
 
-    // REGLA: REGISTRAR MOVIMIENTO (ingreso o egreso) — transaccional
+    async #exigirMovimiento(referencia, contexto) {
+        const movimiento = await this.movimientos.buscarPorIdOCodigo(referencia, contexto)
+        if (!movimiento) throw new NoEncontradoError('movimiento', referencia)
+        return movimiento
+    }
+
+    // REGISTRAR — atómico: crea el movimiento y mueve el acumulado del proyecto.
     async registrar(datos) {
-        const session = this.mongoClient.startSession()
+        return this.unidadDeTrabajo.ejecutar(async (contexto) => {
+            const proyecto = await this.proyectos.buscarPorIdOCodigo(datos.proyectoId, contexto)
+            if (!proyecto) throw new NoEncontradoError('proyecto', datos.proyectoId)
 
-        try {
-            let registrado = null
-
-            await session.withTransaction(async () => {
-                const proyecto = await this.proyectos.buscarPorIdOCodigo(datos.proyectoId, session)
-                if (!proyecto) {
-                    throw new Error(
-                        `No existe ningún proyecto con la referencia "${datos.proyectoId}".`,
-                    )
-                }
-
-                const movimiento = new Movimiento({
-                    ...datos,
-                    proyectoId: proyecto._id,
-                    clienteId: proyecto.clienteId, // lo heredamos del proyecto
-                })
-                movimiento.validar()
-
-                const documento = movimiento.aDocumento()
-
-                // REFERENCIA ÚNICA: no se puede registrar dos veces el mismo pago.
-                const repetido = await this.movimientos.buscarPorReferencia(
-                    documento.referencia,
-                    session,
-                )
-                if (repetido) {
-                    throw new Error(
-                        `La referencia ${documento.referencia} ya está registrada ` +
-                            `(${repetido.concepto}). Ese pago ya se contabilizó.`,
-                    )
-                }
-
-                // REGLA: no se puede registrar un ingreso que supere lo pactado en el proyecto.
-                if (documento.tipo === 'ingreso') {
-                    const pendiente = redondearDinero(proyecto.monto - (proyecto.cobrado ?? 0))
-                    if (documento.monto > pendiente) {
-                        throw new Error(
-                            `El ingreso supera el saldo pendiente del proyecto ` +
-                                `(pendiente: ${pendiente}). Revisa el monto.`,
-                        )
-                    }
-                }
-
-                // PASO 1: crear el movimiento y asignarle un código único
-                documento.codigo = await this.movimientos.siguienteCodigo('MOV', session)
-                const id = await this.movimientos.crear(documento, session)
-
-                // PASO 2: actualizar el acumulado del proyecto
-                const campo = documento.tipo === 'ingreso' ? 'cobrado' : 'gastado'
-                await this.proyectos.incrementarAcumulado(
-                    String(proyecto._id),
-                    campo,
-                    documento.monto,
-                    session,
-                )
-
-                registrado = { _id: id, ...documento }
+            const movimiento = new Movimiento({
+                ...datos,
+                proyectoId: proyecto._id,
+                clienteId: proyecto.clienteId, // lo heredamos del proyecto
             })
+            movimiento.validar()
 
-            return registrado
-        } finally {
-            await session.endSession()
-        }
+            const documento = movimiento.aDocumento()
+
+            // REFERENCIA ÚNICA: no se puede registrar dos veces el mismo pago.
+            const repetido = await this.movimientos.buscarPorReferencia(
+                documento.referencia,
+                contexto,
+            )
+            if (repetido) {
+                throw new ConflictoError(
+                    `La referencia ${documento.referencia} ya está registrada ` +
+                        `(${repetido.concepto}). Ese pago ya se contabilizó.`,
+                )
+            }
+
+            // REGLA: no se puede cobrar más de lo pactado en el proyecto.
+            if (movimiento.esIngreso()) {
+                const pendiente = redondearDinero(proyecto.monto - (proyecto.cobrado ?? 0))
+                if (documento.monto > pendiente) {
+                    throw new ReglaNegocioError(
+                        `El ingreso supera el saldo pendiente del proyecto ` +
+                            `(pendiente: ${pendiente}). Revisa el monto.`,
+                    )
+                }
+            }
+
+            // PASO 1: crear el movimiento con su código único
+            documento.codigo = await this.movimientos.siguienteCodigo('MOV', contexto)
+            const id = await this.movimientos.crear(documento, contexto)
+
+            // PASO 2: actualizar el acumulado del proyecto
+            await this.proyectos.incrementarAcumulado(
+                String(proyecto._id),
+                movimiento.campoAcumulado(),
+                documento.monto,
+                contexto,
+            )
+
+            return { _id: id, ...documento }
+        })
     }
 
-    // ANULAR MOVIMIENTO — transaccional
+    // ANULAR — atómico: marca el movimiento y revierte el acumulado.
     async anular(referencia, motivo) {
-        const session = this.mongoClient.startSession()
+        return this.unidadDeTrabajo.ejecutar(async (contexto) => {
+            const documento = await this.#exigirMovimiento(referencia, contexto)
 
-        try {
-            let anulado = null
-
-            await session.withTransaction(async () => {
-                const movimiento = await this.movimientos.buscarPorIdOCodigo(referencia, session)
-                if (!movimiento) {
-                    throw new Error(`No existe ningún movimiento con la referencia "${referencia}".`)
-                }
-
-                if (movimiento.anulado) {
-                    throw new Error('Ese movimiento ya estaba anulado.')
-                }
-                if (!motivo || motivo.trim().length < 5) {
-                    throw new Error('Debes indicar el motivo de la anulación (mínimo 5 caracteres).')
-                }
-
-                // Paso 1: marcarlo como anulado
-                await this.movimientos.actualizar(
-                    movimiento._id,
-                    { anulado: true, motivoAnulacion: motivo.trim(), anuladoEn: new Date() },
-                    session,
+            if (documento.anulado) {
+                throw new ReglaNegocioError('Ese movimiento ya estaba anulado.')
+            }
+            if (!motivo || motivo.trim().length < 5) {
+                throw new ValidacionError(
+                    'Debes indicar el motivo de la anulación (mínimo 5 caracteres).',
+                    { campo: 'motivo' },
                 )
+            }
 
-                // Paso 2: revertir el acumulado (restando)
-                const campo = movimiento.tipo === 'ingreso' ? 'cobrado' : 'gastado'
-                await this.proyectos.incrementarAcumulado(
-                    String(movimiento.proyectoId),
-                    campo,
-                    -movimiento.monto, // <-- el signo menos es toda la reversión
-                    session,
-                )
+            // Paso 1: marcarlo como anulado
+            await this.movimientos.actualizar(
+                documento._id,
+                { anulado: true, motivoAnulacion: motivo.trim(), anuladoEn: new Date() },
+                contexto,
+            )
 
-                anulado = movimiento
-            })
+            // Paso 2: revertir el acumulado (el signo menos ES la reversión)
+            const movimiento = Movimiento.desdeDocumento(documento)
+            await this.proyectos.incrementarAcumulado(
+                String(documento.proyectoId),
+                movimiento.campoAcumulado(),
+                -documento.monto,
+                contexto,
+            )
 
-            return anulado
-        } finally {
-            await session.endSession()
-        }
+            return documento
+        })
     }
 
-    // EDITAR CONCEPTO DE MOVIMIENTO 
+    /**
+     * REGLA: los importes NO se editan. Un importe mal puesto se anula y se
+     * vuelve a registrar, para que quede rastro. Solo se corrige el concepto.
+     */
     async editarConcepto(referencia, concepto) {
-        const movimiento = await this.movimientos.buscarPorIdOCodigo(referencia)
-        if (!movimiento) {
-            throw new Error(`No existe ningún movimiento con la referencia "${referencia}".`)
+        const documento = await this.#exigirMovimiento(referencia)
+
+        if (documento.anulado) {
+            throw new ReglaNegocioError('Ese movimiento está anulado: no se puede editar.')
         }
 
-        if (movimiento.anulado) {
-            throw new Error('Ese movimiento está anulado: no se puede editar.')
-        }
-        if (!concepto || concepto.trim().length < 3) {
-            throw new Error('El concepto es obligatorio (mínimo 3 caracteres).')
-        }
+        const editado = Movimiento.desdeDocumento(documento, { concepto })
+        editado.validar()
 
-        await this.movimientos.actualizar(movimiento._id, {
-            concepto: concepto.trim(),
+        await this.movimientos.actualizar(documento._id, {
+            concepto: editado.concepto,
             actualizadoEn: new Date(),
         })
 
-        return { ...movimiento, concepto: concepto.trim() }
+        return { ...documento, concepto: editado.concepto }
     }
 
     async listar(filtros) {
@@ -154,7 +136,7 @@ export class FinanzaService {
         return this.proyectos.listar()
     }
 
-    // BALANCE GENERAL: ingresos, egresos y utilidad, opcionalmente filtrado por fecha
+    // BALANCE GENERAL: ingresos, egresos y utilidad, opcionalmente por fechas.
     async balance({ desde, hasta } = {}) {
         const filtro = {}
         if (desde || hasta) {
@@ -172,7 +154,6 @@ export class FinanzaService {
 
         for (const cliente of clientes) {
             const totales = await this.movimientos.sumarPorTipo({ clienteId: cliente._id })
-            // No mostramos clientes sin ningún movimiento
             if (totales.ingresos === 0 && totales.egresos === 0) continue
             filas.push({ cliente: cliente.nombre, ...totales })
         }
@@ -180,10 +161,10 @@ export class FinanzaService {
         return filas.sort((a, b) => b.balance - a.balance)
     }
 
-    // RENTABILIDAD DE UN PROYECTO: cuánto ha costado, cuánto se ha cobrado y el margen
+    // RENTABILIDAD DE UN PROYECTO.
     async rentabilidad(referencia) {
         const proyecto = await this.proyectos.buscarPorIdOCodigo(referencia)
-        if (!proyecto) throw new Error(`No existe ningún proyecto con la referencia "${referencia}".`)
+        if (!proyecto) throw new NoEncontradoError('proyecto', referencia)
 
         const totales = await this.movimientos.sumarPorTipo({ proyectoId: proyecto._id })
 
@@ -196,9 +177,7 @@ export class FinanzaService {
             utilidad: totales.balance,
             pendienteDeCobro: proyecto.monto - totales.ingresos,
             margen:
-                totales.ingresos === 0
-                    ? 0
-                    : Math.round((totales.balance / totales.ingresos) * 100),
+                totales.ingresos === 0 ? 0 : Math.round((totales.balance / totales.ingresos) * 100),
         }
     }
 }

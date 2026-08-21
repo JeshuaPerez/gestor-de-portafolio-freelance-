@@ -1,7 +1,10 @@
-import { ObjectId } from 'mongodb'
-import { BaseRepositorio } from './BaseRepositorio.js'
+import { Proyecto } from '../models/Proyecto.js'
+import { RepositorioEscritura } from './RepositorioEscritura.js'
+import { RepositorioLectura } from './RepositorioLectura.js'
 
-export class ProyectoRepositorio extends BaseRepositorio {
+// PATRÓN REPOSITORY — PROYECTOS
+// Un proyecto no se borra: se cancela con su motivo.
+export class ProyectoRepositorio extends RepositorioEscritura {
     constructor(db) {
         super(db, 'proyectos')
     }
@@ -10,26 +13,29 @@ export class ProyectoRepositorio extends BaseRepositorio {
         return this.coleccion.find({ estado }).sort({ codigo: 1 }).toArray()
     }
 
-    async buscarPorPropuesta(propuestaId, session) {
-        return this.coleccion.findOne({ propuestaId }, { session })
+    async buscarPorPropuesta(propuestaId, contexto) {
+        return this.coleccion.findOne({ propuestaId }, { session: contexto })
     }
 
-    async incrementarAcumulado(id, campo, cantidad, session) {
+    /** Mueve un acumulado (cobrado/gastado) y lo deja redondeado a 2 decimales. */
+    async incrementarAcumulado(id, campo, cantidad, contexto) {
+        const _id = RepositorioLectura.normalizarId(id)
+
         await this.coleccion.updateOne(
-            { _id: new ObjectId(id) },
+            { _id },
             { $inc: { [campo]: cantidad } },
-            { session },
+            { session: contexto },
         )
 
         await this.coleccion.updateOne(
-            { _id: new ObjectId(id) },
+            { _id },
             [{ $set: { [campo]: { $round: [`$${campo}`, 2] } } }],
-            { session },
+            { session: contexto },
         )
     }
 
     async crearIndices() {
-        await this.prepararColeccion()
+        await this.prepararColeccion(Proyecto.esquemaMongo())
         await this.coleccion.createIndex({ codigo: 1 }, { unique: true })
         await this.coleccion.createIndex({ propuestaId: 1 }, { unique: true })
     }
