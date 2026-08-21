@@ -67,35 +67,21 @@ export class Entregable extends Modelo {
         return EstadoEntregable.desde(this.estado)
     }
 
-    /**
-     * Abre el historial con el estado de nacimiento del entregable.
-     *
-     * Sin esta entrada el historial de un entregable recién creado sale vacío
-     * y la primera línea que aparece es "pendiente → entregado", sin decir en
-     * ningún momento cuándo empezó a estar pendiente. Con ella, la consulta
-     * cuenta la vida entera del entregable desde el minuto cero.
-     */
     anotarAlta() {
         this.historial = [CambioEstado.alta(this.estado)]
         return this.historial[0]
     }
 
-    /** Anota una transición en el historial y devuelve la entrada creada. */
     anotarCambio(desde, hasta, motivo = null) {
         const cambio = CambioEstado.transicion(desde, hasta, motivo)
         this.historial = [...this.historial, cambio]
         return cambio
     }
 
-    /** La última entrada del historial, o null si todavía no hay ninguna. */
     ultimoCambio() {
         return this.historial.at(-1) ?? null
     }
 
-    /**
-     * Igual que el de Modelo, pero aplanando el historial: al driver hay que
-     * darle objetos planos, no instancias de CambioEstado.
-     */
     aDocumento() {
         return {
             ...super.aDocumento(),

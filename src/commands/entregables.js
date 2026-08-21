@@ -74,19 +74,8 @@ export function mostrarEntregables(entregables) {
     })
 }
 
-/**
- * HISTORIAL DE ESTADOS DE UN ENTREGABLE.
- *
- * Una fila por cambio, del más antiguo al más reciente. Dos columnas merecen
- * explicación:
- *
- *  · "Estado anterior" sale vacío en la primera fila y pone "(alta)": esa
- *    entrada no es una transición, es el nacimiento del entregable;
- *  · "Tiempo en el estado" no está guardado en ninguna parte. Se calcula
- *    restando la fecha de una entrada a la de la siguiente. La última fila
- *    dice "en curso" porque ese estado es el de ahora mismo y todavía no ha
- *    terminado de contar.
- */
+// HISTORIAL DE ESTADOS DE UN ENTREGABLE.
+
 export function mostrarHistorial({ codigo, titulo, estado, cambios }) {
     mostrarPanel({
         titulo: ` ${codigo} · Historial de estados `,
