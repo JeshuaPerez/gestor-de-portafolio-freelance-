@@ -119,10 +119,39 @@ const TIPOS = {
         bson: () => ({ bsonType: 'bool' }),
     },
 
-    // Para campos que guardamos pero no restringimos (historial, motivos libres).
+    // Para campos que guardamos pero no restringimos (motivos libres).
     libre: {
         comprobar: () => null,
         bson: () => ({}),
+    },
+
+    // ARRAY DE SUBDOCUMENTOS — p. ej. el historial de estados del entregable.
+    //
+    // Antes el historial era `libre`, y `libre` no genera esquema: MongoDB
+    // aceptaba cualquier cosa dentro del array. Este tipo cierra ese hueco
+    // sin romper la idea de partida — la forma del subdocumento se declara
+    // UNA vez, en las REGLAS del modelo que lo representa, y de ahí salen
+    // tanto la comprobación en memoria como el `items` del $jsonSchema.
+    subdocumentos: {
+        comprobar(valor, regla) {
+            if (!Array.isArray(valor)) return 'tiene que ser una lista'
+
+            for (const [posicion, elemento] of valor.entries()) {
+                try {
+                    validarContra(elemento, regla.elemento, regla.etiqueta)
+                } catch (error) {
+                    // Se nombra la posición: en una lista de veinte entradas,
+                    // "una entrada inválida" no le sirve a nadie.
+                    return `tiene una entrada inválida en la posición ${posicion + 1} (${error.message})`
+                }
+            }
+
+            return null
+        },
+        bson: (regla) => ({
+            bsonType: 'array',
+            items: aEsquemaMongo(regla.elemento).$jsonSchema,
+        }),
     },
 }
 

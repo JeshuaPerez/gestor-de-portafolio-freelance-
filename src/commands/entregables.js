@@ -1,4 +1,5 @@
 import { Entregable } from '../models/Entregable.js'
+import { CambioEstado } from '../models/estados/CambioEstado.js'
 import {
     AVISO_CANCELAR,
     confirmar,
@@ -9,8 +10,14 @@ import {
 } from '../utils/entrada.js'
 import { conSpinner } from '../utils/espera.js'
 import { barraDeAvance, colorEstado, estilo, mensaje } from '../utils/estilo.js'
-import { diasHasta, fechaRelativa, formatearFecha } from '../utils/formato.js'
-import { panelTransaccion } from '../utils/panel.js'
+import {
+    diasHasta,
+    duracionEntre,
+    fechaRelativa,
+    formatearFecha,
+    formatearFechaHora,
+} from '../utils/formato.js'
+import { comoFicha, mostrarPanel, panelTransaccion } from '../utils/panel.js'
 import { mostrarTabla } from '../utils/tabla.js'
 import { ejecutarAccion, encabezado } from './comun.js'
 
@@ -44,7 +51,11 @@ export function mostrarEntregables(entregables) {
     mostrarTabla({
         cabeceras: ['Código', 'Título', 'Peso', 'Fecha límite', 'Estado', 'Último cambio'],
         filas: entregables.map((e) => {
-            const ultimo = e.historial?.[e.historial.length - 1]
+            // Cómo se lee una entrada del historial lo dice CambioEstado, no
+            // esta pantalla: antes aquí se concatenaban `desde` y `hasta` a
+            // mano, y con la entrada de alta (que no tiene `desde`) eso habría
+            // acabado imprimiendo "null → pendiente".
+            const ultimo = CambioEstado.listaDesdeDocumento(e.historial).at(-1)
             return [
                 estilo.codigo(e.codigo ?? '---'),
                 e.titulo,
@@ -52,7 +63,7 @@ export function mostrarEntregables(entregables) {
                 describirLimite(e),
                 colorEstado(e.estado),
                 ultimo
-                    ? `${ultimo.desde} → ${ultimo.hasta}` +
+                    ? ultimo.describir() +
                       (ultimo.motivo ? `\n${estilo.tenue(ultimo.motivo)}` : '')
                     : estilo.tenue('-'),
             ]
@@ -60,6 +71,51 @@ export function mostrarEntregables(entregables) {
         alineado: ['left', 'left', 'right', 'left', 'left', 'left'],
         vacio: 'Este proyecto todavía no tiene entregables.',
         resumen: `Total: ${entregables.length} entregable(s)`,
+    })
+}
+
+/**
+ * HISTORIAL DE ESTADOS DE UN ENTREGABLE.
+ *
+ * Una fila por cambio, del más antiguo al más reciente. Dos columnas merecen
+ * explicación:
+ *
+ *  · "Estado anterior" sale vacío en la primera fila y pone "(alta)": esa
+ *    entrada no es una transición, es el nacimiento del entregable;
+ *  · "Tiempo en el estado" no está guardado en ninguna parte. Se calcula
+ *    restando la fecha de una entrada a la de la siguiente. La última fila
+ *    dice "en curso" porque ese estado es el de ahora mismo y todavía no ha
+ *    terminado de contar.
+ */
+export function mostrarHistorial({ codigo, titulo, estado, cambios }) {
+    mostrarPanel({
+        titulo: ` ${codigo} · Historial de estados `,
+        lineas: comoFicha([
+            ['Entregable', titulo],
+            ['Estado actual', colorEstado(estado)],
+            ['Cambios registrados', String(cambios.length)],
+        ]),
+    })
+
+    mostrarTabla({
+        cabeceras: ['#', 'Fecha', 'Estado anterior', 'Estado nuevo', 'Motivo', 'Tiempo en el estado'],
+        filas: cambios.map((cambio, posicion) => {
+            const siguiente = cambios[posicion + 1]
+
+            return [
+                String(posicion + 1),
+                `${formatearFechaHora(cambio.fecha)}\n${estilo.tenue(fechaRelativa(cambio.fecha))}`,
+                cambio.esAlta() ? estilo.tenue('(alta)') : colorEstado(cambio.desde),
+                colorEstado(cambio.hasta),
+                cambio.motivo ?? estilo.tenue('-'),
+                siguiente
+                    ? duracionEntre(cambio.fecha, siguiente.fecha)
+                    : estilo.tenue('en curso'),
+            ]
+        }),
+        alineado: ['right', 'left', 'left', 'left', 'left', 'right'],
+        vacio: 'Este entregable no tiene cambios registrados todavía.',
+        resumen: `${cambios.length} cambio(s) de estado`,
     })
 }
 
@@ -92,6 +148,7 @@ export async function menuEntregablesDeProyecto(proyecto, entregableService) {
                 { nombre: 'Editar entregable', valor: 'editar' },
                 { separador: true },
                 { nombre: 'Cambiar estado (recalcula el avance)', valor: 'estado' },
+                { nombre: 'Ver historial de cambios de estado', valor: 'historial' },
                 { nombre: 'Eliminar entregable', valor: 'eliminar' },
                 { separador: true },
                 { nombre: 'Volver al proyecto', valor: 'volver' },
@@ -235,6 +292,28 @@ export async function menuEntregablesDeProyecto(proyecto, entregableService) {
                         `"${r.titulo}" pasó a ${colorEstado(r.estadoNuevo)}`,
                         `Avance recalculado: ${barraDeAvance(r.avance)}`,
                     ])
+                    break
+                }
+
+                case 'historial': {
+                    encabezado('Historial de cambios de estado', [
+                        'Cada transición queda guardada con el estado anterior, el nuevo y la fecha.',
+                        'El registro es solo de lectura: no se puede editar ni borrar.',
+                    ])
+
+                    const consultado = await elegirEntregable(
+                        entregableService,
+                        proyecto,
+                        'Elige el entregable a consultar',
+                    )
+
+                    // Se pregunta por el código, que es lo que el usuario ve en
+                    // pantalla. El servicio acepta el código o el _id indistintamente.
+                    const historial = await entregableService.historialDe(
+                        consultado.codigo ?? consultado._id,
+                    )
+
+                    mostrarHistorial(historial)
                     break
                 }
 

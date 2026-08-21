@@ -2,6 +2,7 @@ import { aFechaLocal } from '../dominio/valores.js'
 import { NoEncontradoError, ReglaNegocioError } from '../errors/errores.js'
 import { EVENTOS } from '../eventos/EmisorEventos.js'
 import { Entregable } from '../models/Entregable.js'
+import { CambioEstado } from '../models/estados/CambioEstado.js'
 
 // REGLAS DE NEGOCIO PARA ENTREGABLES
 //
@@ -43,6 +44,11 @@ export class EntregableService {
             }
 
             const entregable = new Entregable({ ...datos, proyectoId: proyecto._id })
+
+            // El historial arranca aquí, con el estado en el que nace: así la
+            // consulta puede decir desde cuándo estuvo pendiente, y no solo
+            // qué le pasó después.
+            entregable.anotarAlta()
             entregable.validar()
 
             if (entregable.fechaLimite > new Date(proyecto.fechaFinEstimada)) {
@@ -96,14 +102,21 @@ export class EntregableService {
             // Si no lo es, lanza él mismo el error explicando qué se puede hacer.
             const estadoDestino = entregable.estadoActual().transicionarA(claveNueva, motivo)
 
-            const entrada = entregable.anotarCambio(entregable.estado, estadoDestino.clave, motivo)
+            // La entrada se valida ANTES de escribirla. El historial es un
+            // registro de auditoría: una entrada mal formada no se nota hasta
+            // que alguien va a consultarla, que es justo cuando ya no se puede
+            // reconstruir lo que pasó.
+            const cambio = entregable.anotarCambio(entregable.estado, estadoDestino.clave, motivo)
+            cambio.validar()
 
-            await this.entregables.actualizar(
+            // Estado nuevo y entrada de historial, en una sola escritura: no
+            // hay ningún instante en el que uno esté puesto y el otro no.
+            await this.entregables.registrarCambioEstado(
                 documento._id,
-                { estado: estadoDestino.clave, actualizadoEn: new Date() },
+                estadoDestino.clave,
+                cambio.aDocumento(),
                 contexto,
             )
-            await this.entregables.agregarAlHistorial(documento._id, entrada, contexto)
 
             await this.emisor.emitir(EVENTOS.ENTREGABLE_CAMBIO_ESTADO, {
                 proyectoId: documento.proyectoId,
@@ -123,6 +136,30 @@ export class EntregableService {
                 avance: proyecto?.avance ?? 0,
             }
         })
+    }
+
+    /**
+     * HISTORIAL — todos los cambios de estado de un entregable, en orden.
+     *
+     * Es la consulta que da servicio al comando de consola. Tres detalles:
+     *
+     *  · una sola lectura, y proyectada: el repositorio pide solo los cuatro
+     *    campos que se van a pintar, no el documento entero;
+     *  · acepta el código legible (ENT-0001) igual que el _id, como el resto
+     *    del sistema;
+     *  · devuelve objetos CambioEstado, no documentos crudos, para que la
+     *    consola no tenga que saber cómo está guardado el historial por dentro.
+     */
+    async historialDe(referencia) {
+        const documento = await this.entregables.historialDe(referencia)
+        if (!documento) throw new NoEncontradoError('entregable', referencia)
+
+        return {
+            codigo: documento.codigo,
+            titulo: documento.titulo,
+            estado: documento.estado,
+            cambios: CambioEstado.listaDesdeDocumento(documento.historial),
+        }
     }
 
     // EDITAR — reconstruye el modelo y lo valida ENTERO, igual que al crear.

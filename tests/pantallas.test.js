@@ -220,11 +220,33 @@ try {
             () => menus.menuEntregablesDeProyecto(proyecto, entregableService),
             [
                 ...bajar(0), // Ver los entregables de este proyecto
-                ...bajar(5), // Volver al proyecto
+                ...bajar(6), // Volver al proyecto
             ],
         )
         assert.ok(salida.includes('ENT-0001'))
         assert.ok(salida.includes('Diseño de interfaz interactiva'))
+    })
+
+    await prueba('Entregables: el historial de estados se consulta por consola', async () => {
+        const proyecto = await proyectos.buscarPorIdOCodigo('PRY-0001')
+
+        // ENT-0001 nacio pendiente y paso a entregado en el montaje de arriba:
+        // el historial tiene que contar las DOS cosas, el alta y la transicion.
+        const salida = await recorrer(
+            () => menus.menuEntregablesDeProyecto(proyecto, entregableService),
+            [
+                ...bajar(4), // Ver historial de cambios de estado
+                ENTER, // el unico entregable del proyecto
+                ...bajar(6), // Volver al proyecto
+            ],
+        )
+
+        assert.ok(salida.includes('Historial de cambios de estado'), 'la cabecera de la pantalla')
+        assert.ok(salida.includes('ENT-0001 · Historial de estados'), 'la ficha del entregable')
+        assert.ok(salida.includes('(alta)'), 'la entrada de nacimiento')
+        assert.ok(salida.includes('PENDIENTE'), 'el primer estado')
+        assert.ok(salida.includes('ENTREGADO'), 'el estado al que paso')
+        assert.ok(salida.includes('2 cambio(s) de estado'), 'el recuento del pie')
     })
 
     await prueba('Finanzas: movimientos, balances y rentabilidad', async () => {

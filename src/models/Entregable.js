@@ -1,5 +1,6 @@
 import { aFechaLocal } from '../dominio/valores.js'
 import { Modelo } from './Modelo.js'
+import { CambioEstado } from './estados/CambioEstado.js'
 import { EstadoEntregable } from './estados/EstadoEntregable.js'
 
 // MODELO ENTREGABLE
@@ -8,6 +9,9 @@ import { EstadoEntregable } from './estados/EstadoEntregable.js'
 // vive ahora en las clases de estado (patrón State). El modelo guarda la
 // CLAVE del estado, que es lo que va a MongoDB, y sabe darte el objeto de
 // estado cuando hace falta preguntarle algo.
+//
+// El `historial` tampoco es ya una lista de objetos sueltos: cada entrada es
+// un CambioEstado, con sus reglas propias. Ver ese archivo para el porqué.
 export class Entregable extends Modelo {
     static entidad = 'entregable'
 
@@ -19,7 +23,12 @@ export class Entregable extends Modelo {
         fechaLimite: { tipo: 'fecha', etiqueta: 'fecha límite' },
         peso: { tipo: 'numero', min: 1, max: 1000, etiqueta: 'peso' },
         estado: { tipo: 'lista', valores: EstadoEntregable.claves(), etiqueta: 'estado' },
-        historial: { tipo: 'libre', etiqueta: 'historial' },
+        // La forma de cada entrada la declara CambioEstado, no este modelo.
+        historial: {
+            tipo: 'subdocumentos',
+            elemento: CambioEstado.REGLAS,
+            etiqueta: 'historial de estados',
+        },
         creadoEn: { tipo: 'fecha', etiqueta: 'fecha de creación' },
     }
 
@@ -42,7 +51,7 @@ export class Entregable extends Modelo {
         this.fechaLimite = fechaLimite ? aFechaLocal(fechaLimite) : null
         this.peso = Number(peso)
         this.estado = estado
-        this.historial = historial
+        this.historial = CambioEstado.listaDesdeDocumento(historial)
         this.creadoEn = creadoEn ?? new Date()
     }
 
@@ -58,10 +67,39 @@ export class Entregable extends Modelo {
         return EstadoEntregable.desde(this.estado)
     }
 
-    /** Anota el cambio en el historial y devuelve la entrada creada. */
+    /**
+     * Abre el historial con el estado de nacimiento del entregable.
+     *
+     * Sin esta entrada el historial de un entregable recién creado sale vacío
+     * y la primera línea que aparece es "pendiente → entregado", sin decir en
+     * ningún momento cuándo empezó a estar pendiente. Con ella, la consulta
+     * cuenta la vida entera del entregable desde el minuto cero.
+     */
+    anotarAlta() {
+        this.historial = [CambioEstado.alta(this.estado)]
+        return this.historial[0]
+    }
+
+    /** Anota una transición en el historial y devuelve la entrada creada. */
     anotarCambio(desde, hasta, motivo = null) {
-        const entrada = { desde, hasta, motivo: motivo?.trim() || null, fecha: new Date() }
-        this.historial = [...(this.historial ?? []), entrada]
-        return entrada
+        const cambio = CambioEstado.transicion(desde, hasta, motivo)
+        this.historial = [...this.historial, cambio]
+        return cambio
+    }
+
+    /** La última entrada del historial, o null si todavía no hay ninguna. */
+    ultimoCambio() {
+        return this.historial.at(-1) ?? null
+    }
+
+    /**
+     * Igual que el de Modelo, pero aplanando el historial: al driver hay que
+     * darle objetos planos, no instancias de CambioEstado.
+     */
+    aDocumento() {
+        return {
+            ...super.aDocumento(),
+            historial: this.historial.map((cambio) => cambio.aDocumento()),
+        }
     }
 }

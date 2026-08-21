@@ -43,9 +43,30 @@ export function formatearFechaLarga(fecha) {
     return dayjs(fecha).format('D [de] MMMM [de] YYYY')
 }
 
+/**
+ * Con la hora. En un historial de auditoría el día no basta: dos cambios de
+ * estado del mismo entregable pueden caer en la misma fecha, y sin la hora no
+ * hay forma de saber cuál pasó antes.
+ */
+export function formatearFechaHora(fecha) {
+    if (!fecha) return '-'
+    return dayjs(fecha).format('DD/MM/YYYY HH:mm')
+}
+
 export function fechaRelativa(fecha) {
     if (!fecha) return '-'
     return dayjs(fecha).fromNow()
+}
+
+/**
+ * Cuánto tiempo separa dos momentos: "3 días", "2 horas", "un mes".
+ * A diferencia de `fechaRelativa`, no dice "hace": no es un punto en el
+ * tiempo, es un intervalo. La usa el historial para contar cuánto estuvo el
+ * entregable en cada estado.
+ */
+export function duracionEntre(inicio, fin) {
+    if (!inicio || !fin) return '-'
+    return dayjs(fin).from(dayjs(inicio), true)
 }
 
 export function estaVencida(fecha) {

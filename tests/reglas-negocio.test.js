@@ -465,6 +465,104 @@ try {
         )
     })
 
+    // HISTORIAL DE ESTADOS DE LOS ENTREGABLES
+    //
+    // Se apoyan en lo que ya paso en pruebas anteriores:
+    //   ENT-0001  pendiente -> entregado -> aprobado          (prueba 15)
+    //   ENT-0002  pendiente -> entregado -> rechazado + motivo (prueba 16)
+
+    await prueba('36. El historial se abre con el alta del entregable', async () => {
+        const e = await entregables.buscarPorIdOCodigo('ENT-0001')
+        const alta = e.historial[0]
+
+        assert.equal(alta.desde, null, 'el alta no viene de ningun estado anterior')
+        assert.equal(alta.hasta, 'pendiente')
+        assert.ok(alta.fecha instanceof Date, 'la fecha se guarda como Date, no como texto')
+    })
+
+    await prueba('37. Cada cambio deja su entrada con estado anterior, nuevo y fecha', async () => {
+        const e = await entregables.buscarPorIdOCodigo('ENT-0001')
+        assert.equal(e.historial.length, 3, 'el alta mas las dos transiciones')
+
+        assert.deepEqual(
+            e.historial.map((c) => [c.desde, c.hasta]),
+            [
+                [null, 'pendiente'],
+                ['pendiente', 'entregado'],
+                ['entregado', 'aprobado'],
+            ],
+        )
+        for (const cambio of e.historial) assert.ok(cambio.fecha instanceof Date)
+
+        // El estado guardado y la ultima entrada NO pueden discrepar: los
+        // escribe la misma operacion, en un solo updateOne.
+        assert.equal(e.historial.at(-1).hasta, e.estado)
+    })
+
+    await prueba('38. El motivo del rechazo queda guardado en la entrada', async () => {
+        const e = await entregables.buscarPorIdOCodigo('ENT-0002')
+        const rechazo = e.historial.at(-1)
+
+        assert.equal(rechazo.desde, 'entregado')
+        assert.equal(rechazo.hasta, 'rechazado')
+        assert.equal(rechazo.motivo, 'Faltan las pantallas de checkout')
+
+        // El intento con el motivo demasiado corto fue rechazado ANTES de
+        // escribir nada: no puede haber dejado una entrada a medias.
+        assert.equal(e.historial.filter((c) => c.hasta === 'rechazado').length, 1)
+    })
+
+    await prueba('39. historialDe() responde por codigo o por _id, y en orden', async () => {
+        const h = await entregableService.historialDe('ENT-0002')
+
+        assert.equal(h.codigo, 'ENT-0002')
+        assert.equal(h.estado, 'rechazado')
+        assert.equal(h.cambios.length, 3)
+        assert.equal(h.cambios[0].esAlta(), true)
+        assert.equal(h.cambios.at(-1).describir(), 'entregado → rechazado')
+
+        for (let i = 1; i < h.cambios.length; i++) {
+            assert.ok(h.cambios[i].fecha >= h.cambios[i - 1].fecha, 'orden cronologico')
+        }
+
+        const e = await entregables.buscarPorIdOCodigo('ENT-0002')
+        assert.equal((await entregableService.historialDe(e._id)).cambios.length, 3)
+
+        await assert.rejects(
+            () => entregableService.historialDe('ENT-9999'),
+            /No existe ningún entregable/,
+        )
+    })
+
+    await prueba('40. La base de datos rechaza una entrada de historial invalida', async () => {
+        const e = await entregables.buscarPorIdOCodigo('ENT-0001')
+
+        // Escribiendo POR FUERA de la aplicacion, saltandose el modelo entero.
+        // El $jsonSchema de la coleccion tiene que pararlo igual: por eso el
+        // historial dejo de ser un campo `libre`.
+        await assert.rejects(
+            () =>
+                entregables.coleccion.updateOne(
+                    { _id: e._id },
+                    { $push: { historial: { hasta: 'inventado', fecha: new Date() } } },
+                ),
+            (error) => error.code === 121,
+            'un estado inexistente no puede entrar en el historial',
+        )
+
+        await assert.rejects(
+            () =>
+                entregables.coleccion.updateOne(
+                    { _id: e._id },
+                    { $push: { historial: { hasta: 'aprobado', fecha: '2026-01-01' } } },
+                ),
+            (error) => error.code === 121,
+            'la fecha tiene que ser una fecha, no texto',
+        )
+
+        // Y el historial bueno sigue intacto.
+        assert.equal((await entregables.buscarPorIdOCodigo('ENT-0001')).historial.length, 3)
+    })
 } finally {
     await db.dropDatabase()
     await database.cerrar()
@@ -472,5 +570,5 @@ try {
 }
 
 console.log(`\n=====================================`)
-console.log(`  ${ok}/35 pruebas OK`)
+console.log(`  ${ok}/40 pruebas OK`)
 console.log(`=====================================`)

@@ -72,25 +72,37 @@ export class RepositorioLectura {
         )
     }
 
-    async buscarPorId(id, contexto) {
+    /**
+     * `proyeccion` es opcional y por defecto no cambia nada: sin ella se trae
+     * el documento entero, como siempre. Sirve para las consultas que solo
+     * necesitan una parte — leer el historial de un entregable no tiene por
+     * qué arrastrar también su descripción de mil caracteres.
+     */
+    async buscarPorId(id, contexto, proyeccion = null) {
         if (!ObjectId.isValid(id)) return null
-        return this.coleccion.findOne({ _id: new ObjectId(id) }, { session: contexto })
+        return this.coleccion.findOne(
+            { _id: new ObjectId(id) },
+            { session: contexto, ...(proyeccion ? { projection: proyeccion } : {}) },
+        )
     }
 
-    async buscarPorIdOCodigo(valor, contexto) {
+    async buscarPorIdOCodigo(valor, contexto, proyeccion = null) {
         if (valor === null || valor === undefined) return null
 
-        if (typeof valor !== 'string') return this.buscarPorId(valor, contexto)
+        if (typeof valor !== 'string') return this.buscarPorId(valor, contexto, proyeccion)
 
         const texto = valor.trim()
         if (!texto) return null
 
         // TRES LETRAS, UN GUION Y CUATRO DÍGITOS: CLI-0001, PRY-0012...
         if (/^[a-z]{3}-\d{4}$/i.test(texto)) {
-            return this.coleccion.findOne({ codigo: texto.toUpperCase() }, { session: contexto })
+            return this.coleccion.findOne(
+                { codigo: texto.toUpperCase() },
+                { session: contexto, ...(proyeccion ? { projection: proyeccion } : {}) },
+            )
         }
 
-        return this.buscarPorId(texto, contexto)
+        return this.buscarPorId(texto, contexto, proyeccion)
     }
 
     async listar(filtro = {}, contexto, orden = { codigo: 1 }) {
